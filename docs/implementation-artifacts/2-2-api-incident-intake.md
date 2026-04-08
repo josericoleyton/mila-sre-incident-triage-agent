@@ -1,7 +1,7 @@
 # Story 2.2: API Incident Intake Endpoints
 
 > **Epic:** 2 — Incident Submission Experience (UI + API)
-> **Status:** ready-for-dev
+> **Status:** review
 > **Priority:** 🟠 High — UI path priority workstream
 > **Depends on:** Story 1.2 (Redis infrastructure, domain models)
 > **FRs:** FR1, FR2, FR3, FR4, FR6
@@ -43,7 +43,7 @@
 
 ## Tasks / Subtasks
 
-- [ ] **1. Create FastAPI route — POST /api/incidents**
+- [x] **1. Create FastAPI route — POST /api/incidents**
   - In `adapters/inbound/fastapi_routes.py`
   - Accept multipart form data: title (str, required), description (str, optional), component (str, optional), severity (str, optional), file (UploadFile, optional)
   - Validate: title non-empty, file type in allowed list (image/*, video/*, .log, .txt), file size ≤ 50MB
@@ -52,33 +52,33 @@
   - Set `reporter_slack_user_id` from `config.SLACK_REPORTER_USER_ID`
   - Return 201 with `{ status: "ok", data: { incident_id, message } }`
 
-- [ ] **2. Create FastAPI route — POST /api/webhooks/otel**
+- [x] **2. Create FastAPI route — POST /api/webhooks/otel**
   - Accept JSON body with OTEL error payload
   - Extract: error_message, service_name, trace_id, status_code, timestamp
   - Generate `incident_id` (UUID v4)
   - Set `source_type = "systemIntegration"`, `reporter_slack_user_id = None`
   - Publish `incident.created` to Redis `incidents` channel
 
-- [ ] **3. Create FastAPI route — POST /api/webhooks/slack**
+- [x] **3. Create FastAPI route — POST /api/webhooks/slack**
   - Accept Slack interaction payload (for re-escalation button clicks)
   - Parse the interaction payload to extract `incident_id` and action
   - Publish `incident.reescalate` event to Redis `reescalations` channel
   - Return HTTP 200 (Slack requires fast response)
 
-- [ ] **4. Wire domain validation**
+- [x] **4. Wire domain validation**
   - `domain/services.py` — `validate_incident(title, file_type, file_size)` → raises domain errors
   - Route handler calls domain validation before publishing
 
-- [ ] **5. Implement file storage**
+- [x] **5. Implement file storage**
   - Save uploaded file to `/shared/attachments/{incident_id}/{filename}`
   - Include `attachment_url` (file path) in the Redis event payload
   - Shared Docker volume is mounted on both API and Agent containers
 
-- [ ] **6. Wire Redis publisher**
+- [x] **6. Wire Redis publisher**
   - Use `RedisPublisher` from Story 1.2 to publish `incident.created` events
   - Wrap publish in try/except → return 503 on Redis failure
 
-- [ ] **7. Register routes in main.py**
+- [x] **7. Register routes in main.py**
   - Include the router in the FastAPI app
   - Add structured logging middleware (request_id, timestamp)
 
@@ -126,4 +126,17 @@
 
 ## Chat Command Log
 
-*Dev agent: record your implementation commands and decisions here.*
+### Implementation Notes (2026-04-08)
+
+**Decision: title Form default** — Used `Form(default="")` instead of `Form(...)` so domain validation handles empty titles consistently (returns our custom 422 envelope instead of FastAPI's default).
+
+**Decision: publisher lifecycle** — Global singleton `RedisPublisher` with lazy init + shutdown hook, avoids connection churn.
+
+### File List
+- `services/api/src/domain/services.py` — Domain validation (validate_incident, ValidationError)
+- `services/api/src/adapters/inbound/fastapi_routes.py` — All 3 routes + publisher lifecycle
+- `services/api/src/main.py` — Router registration + shutdown hook
+- `tests/test_api_incidents.py` — 19 tests (validation, incidents, otel, slack, health)
+
+### Change Log
+- 2026-04-08: Implemented all 7 tasks for Story 2.2. 19 new tests, 70 total tests pass (0 regressions).

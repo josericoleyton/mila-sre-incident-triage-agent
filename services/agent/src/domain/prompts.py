@@ -30,11 +30,23 @@ Provide thorough chain-of-thought reasoning for every classification decision.
 {classification_criteria}
 
 SEVERITY ASSESSMENT:
-Independently evaluate the severity based on:
+You MUST independently evaluate severity as one of:
+- P1 (Critical): Complete service outage, data loss/corruption, security breach, all users affected
+- P2 (High): Major feature broken, significant user impact, no workaround, revenue-affecting
+- P3 (Medium): Minor issue, workaround exists, limited user impact, degraded but functional
+- P4 (Low): Cosmetic issue, enhancement, minimal user impact, no functional degradation
+
+Base your severity on code impact analysis:
 - Impact scope (single user, subset, all users)
 - Business impact (revenue, data integrity, security)
 - Urgency (workaround available, degraded vs. complete outage)
-Provide a severity level (critical/high/medium/low) with justification.
+
+If the reporter provided a perceived severity, acknowledge it (e.g., "Reporter indicated: High")
+and explain any difference between your assessment and theirs in your severity_assessment field.
+If no reporter severity was provided, assess purely from code analysis with no reference to reporter input.
+
+Your severity_assessment field must include: your P1-P4 level, your justification based on code impact,
+the reporter's input (if provided), and a delta explanation if they differ.
 
 CONFIDENCE SCORING:
 - 0.9-1.0: Clear evidence, strong code correlation

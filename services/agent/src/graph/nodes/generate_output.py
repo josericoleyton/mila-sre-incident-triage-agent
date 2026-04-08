@@ -14,7 +14,19 @@ logger = logging.getLogger(__name__)
 
 def _map_severity(severity_assessment: str) -> str:
     """Map agent severity assessment text to P1-P4."""
+    if not severity_assessment or not severity_assessment.strip():
+        return "P4"
     sa = severity_assessment.lower()
+    # Check explicit P-level codes first (most reliable when LLM follows instructions)
+    if "p1" in sa:
+        return "P1"
+    elif "p2" in sa:
+        return "P2"
+    elif "p3" in sa:
+        return "P3"
+    elif "p4" in sa:
+        return "P4"
+    # Fallback to keyword matching
     if "critical" in sa:
         return "P1"
     elif "high" in sa:
@@ -23,6 +35,37 @@ def _map_severity(severity_assessment: str) -> str:
         return "P3"
     else:
         return "P4"
+
+
+def _map_reporter_severity(reporter_severity: str) -> str:
+    """Map free-text reporter severity to P1-P4 for structured comparison."""
+    if not reporter_severity or not reporter_severity.strip():
+        return "P4"
+    rs = reporter_severity.strip().lower()
+    if rs in ("p1", "critical", "urgent"):
+        return "P1"
+    elif rs in ("p2", "high"):
+        return "P2"
+    elif rs in ("p3", "medium", "moderate"):
+        return "P3"
+    elif rs in ("p4", "low", "cosmetic"):
+        return "P4"
+    # Fallback: try substring matching
+    if "critical" in rs or "urgent" in rs:
+        return "P1"
+    elif "high" in rs:
+        return "P2"
+    elif "medium" in rs or "moderate" in rs:
+        return "P3"
+    else:
+        return "P4"
+
+
+def _sanitize_markdown(text: str) -> str:
+    """Strip markdown control characters from untrusted text for safe inline rendering."""
+    for ch in ("```", "`", "**", "*", "__", "_", "#", "\n", "\r"):
+        text = text.replace(ch, "")
+    return text.strip()
 
 
 def _format_ticket_body(state: TriageState, result: TriageResult) -> str:
@@ -73,12 +116,12 @@ def _format_ticket_body(state: TriageState, result: TriageResult) -> str:
     # Original report
     title = incident.get("title", "N/A")
     component = incident.get("component", "N/A")
-    reporter_severity = incident.get("severity", "N/A")
+    reporter_severity_display = _sanitize_markdown(str(incident.get("severity", "N/A")))
     description = incident.get("description", "")
     report_lines = [
         f"**Title:** {title}",
         f"**Component:** {component}",
-        f"**Reporter Severity:** {reporter_severity}",
+        f"**Reporter Severity:** {reporter_severity_display}",
     ]
     if description:
         # Fence user-supplied description to prevent markdown injection
@@ -101,15 +144,33 @@ def _format_ticket_body(state: TriageState, result: TriageResult) -> str:
     # Triage reasoning (metadata only — no raw user input per NFR5)
     sections.append(f"## 🧠 Triage Reasoning\n{result.reasoning}")
 
-    # Assessment
+    # Severity assessment with reporter delta (structured P-level comparison)
     severity_label = _map_severity(result.severity_assessment)
-    assessment_lines = [
-        f"- **Confidence:** {result.confidence:.2f}",
-        f"- **Severity:** {severity_label} — {result.severity_assessment}",
-    ]
+    reporter_severity_raw = incident.get("severity")
+    severity_lines = [f"- **Agent Severity:** {severity_label} — {result.severity_assessment}"]
+    if reporter_severity_raw and str(reporter_severity_raw).strip():
+        safe_reporter = _sanitize_markdown(str(reporter_severity_raw))
+        severity_lines.append(f"- **Reporter Indicated:** {safe_reporter}")
+        reporter_p_level = _map_reporter_severity(str(reporter_severity_raw))
+        if reporter_p_level != severity_label:
+            severity_lines.append(
+                f"- **Delta:** Agent assessed {severity_label} independently from code analysis; "
+                f"reporter indicated {safe_reporter} (mapped to {reporter_p_level})."
+            )
+    else:
+        severity_lines.append("- _No reporter severity provided — assessed purely from code analysis_")
+    sections.append("## 📊 Severity Assessment\n" + "\n".join(severity_lines))
+
+    # Confidence assessment
+    confidence_lines = [f"- **Confidence:** {result.confidence:.2f}"]
     if result.confidence < CONFIDENCE_THRESHOLD:
-        assessment_lines.append("- 🟡 *Low confidence — review recommended*")
-    sections.append("## 📊 Assessment\n" + "\n".join(assessment_lines))
+        confidence_lines.append(
+            f"- 🟡 **Low Confidence** — Agent confidence: {result.confidence:.2f}. "
+            "This classification may need manual review."
+        )
+        if result.reasoning:
+            confidence_lines.append("- **Uncertainty Reasoning:** See Triage Reasoning above for details.")
+    sections.append("## 🔎 Confidence\n" + "\n".join(confidence_lines))
 
     return "\n\n".join(sections)
 

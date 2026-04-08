@@ -1,7 +1,7 @@
 # Story 4.2: Engineering Ticket Creation in Linear
 
 > **Epic:** 4 — Ticket Lifecycle Management (Ticket-Service)
-> **Status:** review
+> **Status:** done
 > **Priority:** 🔴 Critical — Core MVP path
 > **Depends on:** Story 4.1 (Ticket-Service scaffold)
 > **FRs:** FR5, FR14, FR15, FR16, FR17, FR18

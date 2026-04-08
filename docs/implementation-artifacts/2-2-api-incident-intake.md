@@ -1,7 +1,7 @@
 # Story 2.2: API Incident Intake Endpoints
 
 > **Epic:** 2 — Incident Submission Experience (UI + API)
-> **Status:** review
+> **Status:** done
 > **Priority:** 🟠 High — UI path priority workstream
 > **Depends on:** Story 1.2 (Redis infrastructure, domain models)
 > **FRs:** FR1, FR2, FR3, FR4, FR6

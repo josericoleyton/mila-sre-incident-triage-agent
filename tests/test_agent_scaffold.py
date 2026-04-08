@@ -497,7 +497,7 @@ class TestAgentInit:
 
     @pytest.mark.asyncio
     async def test_run_pipeline_stub_does_not_crash(self):
-        """The pipeline stub should log and return without error."""
+        """The pipeline should accept state and deps without error."""
         m = _load_models()
         state = m.TriageState(incident_id="inc-test", source_type="userIntegration")
 
@@ -506,6 +506,10 @@ class TestAgentInit:
         spec = importlib.util.spec_from_file_location("agent_main_pipeline_31", main_path)
         mod = importlib.util.module_from_spec(spec)
 
+        mock_deps = MagicMock()
+
         with patch.dict(sys.modules, {"pydantic_ai": MagicMock()}):
             spec.loader.exec_module(mod)
-            await mod.run_pipeline(state)  # should not raise
+            with patch.object(mod, "triage_graph", create=True) as mock_graph:
+                mock_graph.run = AsyncMock()
+                await mod.run_pipeline(state, mock_deps)  # should not raise

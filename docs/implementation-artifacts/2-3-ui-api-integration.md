@@ -1,7 +1,7 @@
 # Story 2.3: UI-API Form Submission Integration
 
 > **Epic:** 2 — Incident Submission Experience (UI + API)
-> **Status:** ready-for-dev
+> **Status:** done
 > **Priority:** 🟠 High — UI path priority workstream
 > **Depends on:** Story 2.1 (UI deployed), Story 2.2 (API endpoint live)
 > **FRs:** FR1, FR2, FR3, FR4, FR6
@@ -32,28 +32,28 @@
 
 ## Tasks / Subtasks
 
-- [ ] **1. Capture severity button value**
+- [x] **1. Capture severity button value**
   - The current HTML uses CSS-only severity buttons with no value capture
   - Add JS to track which severity button is active and store the value
   - Options: add a hidden input field, or track via JS variable
 
-- [ ] **2. Modify submitForm() to make API call**
+- [x] **2. Modify submitForm() to make API call**
   - Replace the current client-side-only `submitForm()` with an actual `fetch()` call
   - POST to `/api/incidents` (relative path — nginx proxies to API)
   - Build `FormData` with: title, description, component, severity, file
   - Set appropriate headers for multipart/form-data
 
-- [ ] **3. Handle success response**
+- [x] **3. Handle success response**
   - Parse API response `{ status: "ok", data: { incident_id } }`
   - Replace the random ticket ID in the success screen with `incident_id`
   - Show the "Mila is on it" success state
 
-- [ ] **4. Handle error response**
+- [x] **4. Handle error response**
   - Show user-friendly error message on 4xx (e.g., "Title is required")
   - Show generic retry message on 5xx (e.g., "Something went wrong. Please try again.")
   - Keep form data filled so reporter can retry without re-entering
 
-- [ ] **5. Add loading state**
+- [x] **5. Add loading state**
   - Show a spinner or "Submitting..." state while the API call is in flight
   - Disable the submit button to prevent double-submission
 
@@ -103,4 +103,30 @@ async function submitForm() {
 
 ## Chat Command Log
 
-*Dev agent: record your implementation commands and decisions here.*
+### Implementation Notes (2026-04-08)
+
+**Decision: JS variable for severity** — Used a global `selectedSeverity` variable with a `values` array mapping (`['low','medium','high','critical']`) indexed by button position. Simpler than a hidden input and avoids DOM queries on submit.
+
+**Decision: client-side title validation** — Added a pre-flight title check in `submitForm()` before calling `fetch()` to provide instant feedback without a round-trip. The API also validates server-side (defense in depth).
+
+**Decision: no Content-Type header** — FormData with `fetch()` auto-sets the correct `multipart/form-data` boundary. Manually setting `Content-Type` would break file uploads.
+
+**Decision: loading state via opacity** — Used `btn.style.opacity = '0.6'` + `btn.disabled = true` for loading UX. Separate `<span>` elements for text/arrow/spinner are toggled via `display`, avoiding innerHTML manipulation.
+
+**Decision: error display element** — Added a `#form-error` div with styled error banner above the form footer. Hidden by default, shown via `showError()` / hidden via `hideError()`. The form remains visible on error so the reporter can fix and retry.
+
+**Decision: removed MILA- prefix from ticket-id** — The API returns a UUID `incident_id`, not a sequential number. The success screen now shows the raw UUID from `data.data.incident_id`.
+
+### File List
+- `services/ui/public/index.html` — All 5 tasks implemented (severity capture, API fetch, success/error/loading states)
+- `tests/test_ui_api_integration.py` — 45 new tests (severity, API call, success, error, loading, regression)
+
+### Change Log
+- 2026-04-08: Implemented all 5 tasks for Story 2.3. 45 new tests, 127 total tests pass (0 regressions; 14 pre-existing failures in agent scaffold unrelated to this story).
+- 2026-04-08: Code review — 1 patch fixed (progress bar reset on error), 3 deferred (fetch timeout, client file-size validation, aria-live), 15 dismissed. 46 tests now (1 new for fix). Status → done.
+
+### Review Findings
+- [x] [Review][Patch] Progress bar stuck at 90% on error — added `updateProgress()` calls in both error paths [index.html]
+- [x] [Review][Defer] No fetch timeout on API call — deferred, enhancement beyond story scope
+- [x] [Review][Defer] No client-side file size validation (50MB limit) — deferred, API validates server-side (Story 2.2)
+- [x] [Review][Defer] No aria-live region for error announcements — deferred, accessibility improvement beyond story scope

@@ -225,14 +225,22 @@
             </div>
           </div>
 
+          <div id="form-error" style="display:none; padding:12px 32px;">
+            <div style="background:#FDECEA; border:0.5px solid #E63946; border-radius:10px; padding:12px 16px; font-size:13px; color:#9A1A22; display:flex; align-items:center; gap:8px;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#E63946" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              <span id="form-error-msg"></span>
+            </div>
+          </div>
+
           <div class="form-footer">
             <div class="footer-left">
               <span class="footer-reporter">Reporting as <strong>Ana Botero</strong></span>
               <span class="footer-reporter" style="font-size:10px;">You'll be notified when this is resolved.</span>
             </div>
             <button class="submit-btn" id="submit-btn" onclick="submitForm()">
-              Submit to Mila
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+              <span id="submit-text">Submit to Mila</span>
+              <svg id="submit-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+              <span id="submit-spinner" style="display:none;">Submitting…</span>
             </button>
           </div>
         </div>
@@ -244,7 +252,7 @@
         </div>
         <h2 class="success-title">Mila is on it.</h2>
         <p class="success-sub">Your report was received, Ana. Mila is analyzing it now<br>and will be in touch shortly.</p>
-        <div class="ticket-id">MILA-<span id="ticket-num">4821</span></div>
+        <div class="ticket-id"><span id="ticket-num"></span></div>
         <div class="what-next">
           <p class="what-next-title">What happens next</p>
           <div class="step">
@@ -267,34 +275,40 @@
 </div>
 
 <script>
+var selectedSeverity = '';
+
 function handleSelect(el) {
   el.classList.remove('empty');
   el.classList.add('filled');
 }
 function setSev(el) {
-  const btns = document.querySelectorAll('.sev-btn');
-  const classes = ['sev-low','sev-med','sev-high','sev-crit'];
-  btns.forEach(b => { b.className = 'sev-btn'; });
-  const idx = Array.from(btns).indexOf(el);
-  if (idx >= 0) el.classList.add(classes[idx]);
+  var btns = document.querySelectorAll('.sev-btn');
+  var classes = ['sev-low','sev-med','sev-high','sev-crit'];
+  var values = ['low','medium','high','critical'];
+  btns.forEach(function(b) { b.className = 'sev-btn'; });
+  var idx = Array.from(btns).indexOf(el);
+  if (idx >= 0) {
+    el.classList.add(classes[idx]);
+    selectedSeverity = values[idx];
+  }
 }
 function updateProgress() {
-  const title = document.getElementById('f-title').value.trim();
-  const desc = document.getElementById('f-desc').value.trim();
-  const filled = [title, desc].filter(Boolean).length;
+  var title = document.getElementById('f-title').value.trim();
+  var desc = document.getElementById('f-desc').value.trim();
+  var filled = [title, desc].filter(Boolean).length;
   document.getElementById('prog').style.width = Math.round((filled / 2) * 80) + '%';
-  const btn = document.getElementById('submit-btn');
+  var btn = document.getElementById('submit-btn');
   if (title) btn.classList.add('ready');
   else btn.classList.remove('ready');
 }
 function updateHint(val) {
-  const hints = [
+  var hints = [
     "Hi Ana \u2014 tell me what you're seeing and I'll take it from there.",
     "Got it. Add a description so I can analyze what's happening.",
     "Good. The more context you give me, the better my triage.",
     "Looking good. Attach evidence if you have it \u2014 screenshots help a lot."
   ];
-  const idx = val.length === 0 ? 0 : val.length < 20 ? 1 : val.length < 50 ? 2 : 3;
+  var idx = val.length === 0 ? 0 : val.length < 20 ? 1 : val.length < 50 ? 2 : 3;
   document.getElementById('mila-hint').innerHTML = hints[idx] + '<span class="mila-cursor"></span>';
 }
 function showFile(input) {
@@ -307,13 +321,73 @@ function removeFile() {
   document.getElementById('fi').value = '';
   document.getElementById('fp').style.display = 'none';
 }
-function submitForm() {
-  document.getElementById('prog').style.width = '100%';
-  document.getElementById('ticket-num').textContent = Math.floor(1000 + Math.random() * 9000);
-  setTimeout(function() {
-    document.getElementById('form-view').style.display = 'none';
-    document.getElementById('success-view').style.display = 'block';
-  }, 400);
+function showError(msg) {
+  var el = document.getElementById('form-error');
+  document.getElementById('form-error-msg').textContent = msg;
+  el.style.display = 'block';
+}
+function hideError() {
+  document.getElementById('form-error').style.display = 'none';
+}
+function setLoading(loading) {
+  var btn = document.getElementById('submit-btn');
+  var text = document.getElementById('submit-text');
+  var arrow = document.getElementById('submit-arrow');
+  var spinner = document.getElementById('submit-spinner');
+  btn.disabled = loading;
+  text.style.display = loading ? 'none' : '';
+  arrow.style.display = loading ? 'none' : '';
+  spinner.style.display = loading ? 'inline' : 'none';
+  if (loading) btn.style.opacity = '0.6';
+  else btn.style.opacity = '';
+}
+async function submitForm() {
+  hideError();
+
+  var title = document.getElementById('f-title').value.trim();
+  if (!title) {
+    showError('Title is required');
+    return;
+  }
+
+  var formData = new FormData();
+  formData.append('title', title);
+  formData.append('description', document.getElementById('f-desc').value);
+  formData.append('component', document.getElementById('f-comp').value || '');
+  formData.append('severity', selectedSeverity);
+  var fileInput = document.getElementById('fi');
+  if (fileInput.files && fileInput.files[0]) {
+    formData.append('file', fileInput.files[0]);
+  }
+
+  setLoading(true);
+  document.getElementById('prog').style.width = '90%';
+
+  try {
+    var response = await fetch('/api/incidents', {
+      method: 'POST',
+      body: formData
+    });
+    var data = await response.json();
+
+    if (response.ok) {
+      document.getElementById('prog').style.width = '100%';
+      document.getElementById('ticket-num').textContent = data.data.incident_id;
+      setTimeout(function() {
+        document.getElementById('form-view').style.display = 'none';
+        document.getElementById('success-view').style.display = 'block';
+      }, 400);
+    } else {
+      setLoading(false);
+      updateProgress();
+      var msg = data.message || 'Validation failed. Please check your input.';
+      showError(msg);
+    }
+  } catch (err) {
+    setLoading(false);
+    updateProgress();
+    showError('Something went wrong. Please try again.');
+  }
 }
 </script>
 

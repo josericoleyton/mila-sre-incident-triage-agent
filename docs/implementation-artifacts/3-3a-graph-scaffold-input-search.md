@@ -1,7 +1,7 @@
 # Story 3.3a: Triage Graph Scaffold + AnalyzeInput & SearchCode Nodes
 
 > **Epic:** 3 — AI Triage & Code Analysis (Agent)
-> **Status:** ready-for-dev
+> **Status:** review
 > **Priority:** 🔴 Critical — Core MVP path
 > **Depends on:** Story 3.1 (Agent scaffold), Story 3.2 (GitHub tools)
 > **FRs:** FR7, FR8, FR9
@@ -42,13 +42,13 @@
 
 ## Tasks / Subtasks
 
-- [ ] **1. Define pydantic-graph workflow**
+- [x] **1. Define pydantic-graph workflow**
   - `graph/workflow.py` — define the graph with nodes and edges
   - Nodes: `AnalyzeInputNode`, `SearchCodeNode`, `ClassifyNode`, `GenerateOutputNode`
   - Edges defined via return type hints (pydantic-graph pattern)
   - Graph state managed via `GraphRunContext` reading/writing `TriageState`
 
-- [ ] **2. Implement AnalyzeInputNode**
+- [x] **2. Implement AnalyzeInputNode**
   - `graph/nodes/analyze_input.py`
   - Parses incident data: title, description, component, severity, attachments
   - Extracts key signals: error messages, stack traces, file references
@@ -56,14 +56,14 @@
   - Reads attachment file from `/shared/attachments/{incident_id}/` path
   - Updates TriageState with extracted signals
 
-- [ ] **3. Implement SearchCodeNode**
+- [x] **3. Implement SearchCodeNode**
   - `graph/nodes/search_code.py`
   - Invokes the Pydantic AI Agent with tools enabled (search_code, read_file from Story 3.2)
   - Agent autonomously searches eShop codebase based on incident signals
   - Agent can iterate: search → read → refine → search again
   - Updates TriageState with code context gathered
 
-- [ ] **4. Wire graph pipeline to consumer**
+- [x] **4. Wire graph pipeline to consumer**
   - Connect Story 3.1's consumer to the graph pipeline
   - TriageState → graph run → (ClassifyNode and GenerateOutputNode are stubs until Story 3.3b)
 
@@ -94,4 +94,24 @@ class AnalyzeInputNode(BaseNode[TriageState]):
 
 ## Chat Command Log
 
-*Dev agent: record your implementation commands and decisions here.*
+### Implementation Notes
+- Added `signals`, `multimodal_content`, `code_context` fields to `TriageState` dataclass
+- All 4 nodes use `BaseNode[TriageState, TriageDeps, TriageResult]` generics for deps injection
+- `AnalyzeInputNode` uses regex-based signal extraction (error patterns, stack traces, file refs)
+- `SearchCodeNode` uses lazy agent initialization (`_get_search_agent()`) to avoid API key validation at import time
+- Graph wired in `main.py`: `run_pipeline(state, deps)` runs `triage_graph.run(AnalyzeInputNode(), state, deps)`
+- `GitHubClient` lifecycle managed in `main()` alongside publisher and consumer
+- 32 new tests in `tests/test_graph_nodes.py`, 106 total tests pass with 0 regressions
+
+### Files Changed
+- `services/agent/src/domain/models.py` — added signals, multimodal_content, code_context to TriageState
+- `services/agent/src/graph/workflow.py` — graph definition with 4 nodes
+- `services/agent/src/graph/nodes/__init__.py` — exports all 4 nodes
+- `services/agent/src/graph/nodes/analyze_input.py` — AnalyzeInputNode implementation
+- `services/agent/src/graph/nodes/search_code.py` — SearchCodeNode implementation
+- `services/agent/src/graph/nodes/classify.py` — ClassifyNode (3.3b)
+- `services/agent/src/graph/nodes/generate_output.py` — GenerateOutputNode (3.3b)
+- `services/agent/src/domain/prompts.py` — system prompt (3.3b)
+- `services/agent/src/main.py` — wired graph pipeline, added GitHubClient lifecycle
+- `tests/test_graph_nodes.py` — 32 tests for all graph nodes
+- `tests/test_agent_scaffold.py` — updated run_pipeline test for new signature

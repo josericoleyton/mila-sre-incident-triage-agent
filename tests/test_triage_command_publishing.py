@@ -872,6 +872,8 @@ class TestProactiveTicketBody:
         assert "\U0001f916 Proactive Detection" in body
         assert "auto-detected from production telemetry" in body
         assert "not user-reported" in body
+        # F1 hybrid: full spec text as heading, em dash included
+        assert "\u2014" in body.split("\n")[0] or "\u2014 This incident" in body
 
     def test_otel_trace_metadata_in_ticket_body(self):
         """AC: OTEL trace metadata (service name, trace ID, status code, error message) displayed."""
@@ -1038,3 +1040,141 @@ class TestTriageStateForcedEscalation:
         m = _load_models()
         state = m.TriageState(incident_id="x", source_type="systemIntegration", forced_escalation=True)
         assert state.forced_escalation is True
+
+
+# ---------------------------------------------------------------------------
+# Review patch tests: edge cases caught by code review
+# ---------------------------------------------------------------------------
+
+class TestReviewPatchEdgeCases:
+    """Tests for fixes identified during Story 3.5 code review."""
+
+    def test_trace_data_non_dict_does_not_crash(self):
+        """F3: trace_data as string should not crash _format_ticket_body."""
+        mod = _load_generate_output()
+        incident = _otel_incident(trace_data="not-a-dict")
+        state = _make_otel_state(incident=incident)
+        result = _make_bug_result()
+        body = mod._format_ticket_body(state, result)
+
+        # Banner still shown, but no metadata section
+        assert "\U0001f916 Proactive Detection" in body
+        assert "\U0001f4e1 OTEL Trace Metadata" not in body
+
+    def test_trace_data_list_does_not_crash(self):
+        """F3: trace_data as list should not crash."""
+        mod = _load_generate_output()
+        incident = _otel_incident(trace_data=["item1", "item2"])
+        state = _make_otel_state(incident=incident)
+        result = _make_bug_result()
+        body = mod._format_ticket_body(state, result)
+        assert "\U0001f916 Proactive Detection" in body
+
+    def test_status_code_zero_included(self):
+        """F4: status_code=0 (falsy int) should still appear in metadata."""
+        mod = _load_generate_output()
+        incident = _otel_incident(trace_data={"status_code": 0})
+        state = _make_otel_state(incident=incident)
+        result = _make_bug_result()
+        body = mod._format_ticket_body(state, result)
+
+        assert "Status Code" in body
+        assert "0" in body
+
+    def test_error_message_triple_backtick_sanitized(self):
+        """F2: error_message containing triple backticks should be sanitized."""
+        mod = _load_generate_output()
+        incident = _otel_incident(
+            trace_data={"error_message": "fail ```injection``` attempt"}
+        )
+        state = _make_otel_state(incident=incident)
+        result = _make_bug_result()
+        body = mod._format_ticket_body(state, result)
+
+        assert "```injection```" not in body
+        assert "'''injection'''" in body
+
+    def test_service_name_markdown_chars_sanitized(self):
+        """F2: service_name with markdown chars should be stripped."""
+        mod = _load_generate_output()
+        incident = _otel_incident(
+            trace_data={"service_name": "**malicious_name**"}
+        )
+        state = _make_otel_state(incident=incident)
+        result = _make_bug_result()
+        body = mod._format_ticket_body(state, result)
+
+        assert "**malicious" not in body.replace("**Service:**", "")
+        assert "maliciousname" in body
+
+    @pytest.mark.asyncio
+    async def test_fallback_path_forced_escalation_for_system_integration(self):
+        """F5: triage_result=None + systemIntegration should still set forced_escalation."""
+        publisher = AsyncMock()
+        publisher.publish.return_value = "evt-fallback-otel"
+
+        state = _make_otel_state()
+        state.triage_result = None  # No result from LLM
+
+        ctx = _mock_ctx(state, publisher)
+        mod = _load_generate_output()
+        node = mod.GenerateOutputNode()
+        end_result = await node.run(ctx)
+
+        # forced_escalation should be True even on fallback
+        assert state.forced_escalation is True
+        # Fallback classification should be bug for systemIntegration
+        assert end_result.data.classification.value == "bug"
+        # triage.completed should have forced_escalation=True
+        calls = publisher.publish.call_args_list
+        completed_calls = [c for c in calls if c[0][1] == "triage.completed"]
+        assert len(completed_calls) == 1
+        assert completed_calls[0][0][2]["forced_escalation"] is True
+
+    @pytest.mark.asyncio
+    async def test_fallback_path_user_integration_unchanged(self):
+        """F5: triage_result=None + userIntegration should remain non_incident."""
+        publisher = AsyncMock()
+        publisher.publish.return_value = "evt-fallback-user"
+
+        state = _make_state()  # userIntegration
+        state.triage_result = None
+
+        ctx = _mock_ctx(state, publisher)
+        mod = _load_generate_output()
+        node = mod.GenerateOutputNode()
+        end_result = await node.run(ctx)
+
+        assert state.forced_escalation is False
+        assert end_result.data.classification.value == "non_incident"
+
+    @pytest.mark.asyncio
+    async def test_original_classification_logged(self):
+        """F6: original LLM classification should be logged before override."""
+        import logging
+        import io
+
+        publisher = AsyncMock()
+        publisher.publish.return_value = "evt-log-check"
+
+        state = _make_otel_state()
+        state.triage_result = _make_non_incident_result()
+
+        ctx = _mock_ctx(state, publisher)
+        mod = _load_generate_output()
+        node = mod.GenerateOutputNode()
+
+        # Capture logs from the module's actual logger
+        log_capture = io.StringIO()
+        handler = logging.StreamHandler(log_capture)
+        handler.setLevel(logging.INFO)
+        mod.logger.addHandler(handler)
+        orig_level = mod.logger.level
+        mod.logger.setLevel(logging.INFO)
+        try:
+            await node.run(ctx)
+            log_output = log_capture.getvalue()
+            assert "Forced classification from non_incident to bug" in log_output
+        finally:
+            mod.logger.removeHandler(handler)
+            mod.logger.setLevel(orig_level)

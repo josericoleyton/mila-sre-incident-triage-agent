@@ -54,6 +54,8 @@ class TriageState:
     multimodal_content: list[dict] = field(default_factory=list)
     # Code context gathered by SearchCodeNode
     code_context: str = ""
+    # Triage duration tracking (monotonic clock)
+    triage_started_at: Optional[float] = None
 
 
 @dataclass

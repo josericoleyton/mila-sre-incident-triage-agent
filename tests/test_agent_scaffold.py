@@ -1,5 +1,5 @@
 """
-Tests for Story 3.1: Agent Service Scaffold with Redis Consumer.
+Tests for Agent Service Scaffold with Redis Consumer.
 
 Covers:
 - IncidentEvent model validation

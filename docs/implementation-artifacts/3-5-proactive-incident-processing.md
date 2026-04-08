@@ -1,7 +1,7 @@
 # Story 3.5: Proactive Incident Processing (systemIntegration — Always Escalate)
 
 > **Epic:** 3 — AI Triage & Code Analysis (Agent)
-> **Status:** ready-for-dev
+> **Status:** done
 > **Priority:** 🟠 High — OTEL differentiator
 > **Depends on:** Story 3.4 (Bug path publishing)
 > **FRs:** FR25
@@ -45,6 +45,18 @@
 - [ ] **4. Skip reporter notification for proactive incidents**
   - `reporter_slack_user_id` is null for systemIntegration events
   - Ensure the ticket command reflects this (Ticket-Service won't send reporter DM)
+
+### Review Findings (2026-04-08)
+
+- [x] [Review][Decision] **AC5 — Banner text deviates from spec** — resolved as hybrid: full spec text as heading
+- [x] [Review][Patch] **Incomplete markdown sanitization of trace_data fields** [generate_output.py:43-50] — sanitized all fields; triple backticks replaced
+- [x] [Review][Patch] **trace_data not validated as dict** [generate_output.py:39] — added isinstance check
+- [x] [Review][Patch] **status_code=0 falsy edge case** [generate_output.py:46] — changed to `is not None` check
+- [x] [Review][Patch] **Fallback path: forced_escalation not set for systemIntegration** [generate_output.py:172] — moved forced_escalation set before fallback; fallback classification also forced to bug
+- [x] [Review][Patch] **Original LLM classification lost to observability** [generate_output.py:178] — now logs original before override
+- [x] [Review][Patch] **Unicode escapes instead of literal emoji** [generate_output.py:36,51] — replaced with literal emoji
+- [x] [Review][Defer] **"systemIntegration" string literal duplicated** — deferred, pre-existing pattern
+- [x] [Review][Defer] **In-place state/result mutation in graph nodes** — deferred, pre-existing architecture
 
 ## Dev Notes
 

@@ -30,6 +30,31 @@ def _format_ticket_body(state: TriageState, result: TriageResult) -> str:
     incident = state.incident
     sections: list[str] = []
 
+    # Proactive detection banner for systemIntegration incidents
+    if state.source_type == "systemIntegration":
+        sections.append(
+            "## 🤖 Proactive Detection — This incident was auto-detected from production telemetry (not user-reported)"
+        )
+        trace_data = incident.get("trace_data") or {}
+        if not isinstance(trace_data, dict):
+            trace_data = {}
+        if trace_data:
+            trace_lines = []
+            if trace_data.get("service_name"):
+                safe_name = str(trace_data["service_name"]).replace("`", "").replace("*", "").replace("_", "")
+                trace_lines.append(f"- **Service:** {safe_name}")
+            if trace_data.get("trace_id"):
+                safe_trace = str(trace_data["trace_id"]).replace("`", "")
+                trace_lines.append(f"- **Trace ID:** `{safe_trace}`")
+            if trace_data.get("status_code") is not None:
+                trace_lines.append(f"- **Status Code:** {trace_data['status_code']}")
+            if trace_data.get("error_message"):
+                # Sanitize to prevent markdown injection (strip triple backticks)
+                safe_error = str(trace_data["error_message"]).replace("```", "'''")
+                trace_lines.append(f"- **Error:** `{safe_error}`")
+            if trace_lines:
+                sections.append("## 📡 OTEL Trace Metadata\n" + "\n".join(trace_lines))
+
     # Affected files
     if result.file_refs:
         file_lines = "\n".join(f"- `{ref}`" for ref in result.file_refs)
@@ -124,7 +149,7 @@ def _build_triage_completed_payload(state: TriageState, result: TriageResult, du
         "confidence": result.confidence,
         "reasoning_summary": result.reasoning[:500] if result.reasoning else "",
         "severity_assessment": result.severity_assessment,
-        "forced_escalation": False,  # TODO(Story 3.7): derive from confidence/severity analysis
+        "forced_escalation": state.forced_escalation,
         "reescalation": state.reescalation,
         "event_id": state.event_id,
         "duration_ms": duration_ms,
@@ -136,6 +161,10 @@ class GenerateOutputNode(BaseNode[TriageState, TriageDeps, TriageResult]):
     async def run(self, ctx: GraphRunContext[TriageState]) -> End[TriageResult]:
         state = ctx.state
 
+        # Story 3.5: Set forced_escalation for proactive incidents even on fallback path
+        if state.source_type == "systemIntegration":
+            state.forced_escalation = True
+
         if state.triage_result is None:
             logger.error(
                 "GenerateOutputNode: no triage_result available for incident %s (event_id=%s)",
@@ -143,7 +172,7 @@ class GenerateOutputNode(BaseNode[TriageState, TriageDeps, TriageResult]):
                 state.event_id,
             )
             fallback = TriageResult(
-                classification=Classification.non_incident,
+                classification=Classification.bug if state.source_type == "systemIntegration" else Classification.non_incident,
                 confidence=0.0,
                 reasoning="Classification failed — no result produced.",
                 severity_assessment="unknown — classification failed",
@@ -152,6 +181,17 @@ class GenerateOutputNode(BaseNode[TriageState, TriageDeps, TriageResult]):
             return End(fallback)
 
         result = state.triage_result
+
+        # Story 3.5: Force bug classification for proactive (systemIntegration) incidents
+        if state.source_type == "systemIntegration":
+            original_classification = result.classification.value if hasattr(result.classification, "value") else str(result.classification)
+            result.classification = Classification.bug
+            logger.info(
+                "Story 3.5: Forced classification from %s to bug for proactive incident %s (event_id=%s)",
+                original_classification,
+                state.incident_id,
+                state.event_id,
+            )
 
         logger.info(
             "GenerateOutputNode: classification=%s, confidence=%.2f, source_type=%s (event_id=%s)",

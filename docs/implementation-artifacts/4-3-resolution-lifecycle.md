@@ -1,7 +1,7 @@
 # Story 4.3: Resolution Lifecycle — Linear Webhook to Reporter Notification
 
 > **Epic:** 4 — Ticket Lifecycle Management (Ticket-Service)
-> **Status:** ready-for-dev
+> **Status:** done
 > **Priority:** 🟡 Medium — Resolution notification path
 > **Depends on:** Story 4.1 (Webhook listener), Story 4.2 (Ticket-incident mapping)
 > **FRs:** FR23, FR24
@@ -31,24 +31,24 @@
 
 ## Tasks / Subtasks
 
-- [ ] **1. Implement resolution webhook handler**
+- [x] **1. Implement resolution webhook handler**
   - In `adapters/inbound/webhook_listener.py`
   - Parse Linear webhook payload for issue state changes
   - Detect "Done" or "Resolved" status transitions
   - Linear webhook type: `Issue` with `action: "update"` and `data.state.name` change
 
-- [ ] **2. Correlate ticket to incident**
+- [x] **2. Correlate ticket to incident**
   - Look up incident_id and reporter_slack_user_id from the ticket-incident mapping (Story 4.2)
   - Options: parse from Linear ticket body (embedded in markdown), or Redis hash lookup
   - If no mapping found → log info and skip (non-tracked ticket)
 
-- [ ] **3. Publish reporter_resolved notification**
+- [x] **3. Publish reporter_resolved notification**
   - `notification.send` event to `notifications` channel
   - `type: "reporter_resolved"`
   - Include: slack_user_id, message, incident_id, ticket_url
   - Only if reporter_slack_user_id is not null (proactive incidents have no reporter)
 
-- [ ] **4. Handle edge cases**
+- [x] **4. Handle edge cases**
   - Duplicate resolution webhooks (Linear may fire multiple times): idempotency check
   - Non-tracked tickets (created outside mila): ignore gracefully
   - Missing reporter (proactive incidents): skip notification, log info
@@ -90,3 +90,26 @@
 ## Chat Command Log
 
 *Dev agent: record your implementation commands and decisions here.*
+
+### Implementation Decisions
+
+- **Ticket-incident correlation via Redis hashes**: Added `TicketMappingStore` port and `RedisTicketMappingStore` adapter using Redis hashes (`ticket-mapping:{linear_ticket_id}`) for O(1) lookup during resolution webhooks.
+- **Idempotency via Redis set**: `resolved-tickets` set tracks already-resolved ticket IDs. `mark_resolved` returns False on duplicates, preventing duplicate notifications.
+- **Backward-compatible `create_app()`**: `mapping_store` and `publisher` are optional parameters. Existing tests and callers without these deps still work.
+- **`create_engineering_ticket` stores mapping**: The mapping store is called during ticket creation (optional param, backward-compatible with Story 4.2 tests).
+- **Empty reporter string treated as no reporter**: Consistent with Redis hash storage where None is stored as empty string.
+
+### File List
+
+| Action   | File                                                    |
+|----------|---------------------------------------------------------|
+| Created  | services/ticket-service/src/ports/ticket_mapping.py     |
+| Created  | services/ticket-service/src/adapters/outbound/redis_ticket_mapping.py |
+| Created  | tests/test_resolution_lifecycle.py                      |
+| Modified | services/ticket-service/src/domain/services.py          |
+| Modified | services/ticket-service/src/adapters/inbound/webhook_listener.py |
+| Modified | services/ticket-service/src/main.py                     |
+
+### Change Log
+
+- 2026-04-08: Story 4.3 implemented — resolution lifecycle with webhook handler, ticket-incident correlation, reporter notification, idempotency, and edge case handling. 20 tests added, all passing. No regressions in ticket-service tests (69/69 pass).

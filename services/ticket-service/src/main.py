@@ -8,6 +8,7 @@ from src.adapters.inbound.redis_consumer import RedisConsumer
 from src.adapters.inbound.webhook_listener import create_app
 from src.adapters.outbound.linear_client import LinearClient
 from src.adapters.outbound.redis_publisher import RedisPublisher
+from src.adapters.outbound.redis_ticket_mapping import RedisTicketMappingStore
 from src.domain.services import handle_ticket_command
 
 logging.basicConfig(
@@ -21,9 +22,10 @@ async def start_consumer(
     consumer: RedisConsumer,
     publisher: RedisPublisher,
     linear_client: LinearClient,
+    mapping_store: RedisTicketMappingStore,
 ) -> None:
     async def on_ticket_command(envelope: dict) -> None:
-        await handle_ticket_command(envelope, publisher, ticket_creator=linear_client)
+        await handle_ticket_command(envelope, publisher, ticket_creator=linear_client, mapping_store=mapping_store)
 
     await consumer.subscribe("ticket-commands", on_ticket_command)
 
@@ -43,14 +45,17 @@ async def main():
     consumer: RedisConsumer | None = None
     publisher: RedisPublisher | None = None
     linear_client: LinearClient | None = None
-    app = create_app()
+    mapping_store: RedisTicketMappingStore | None = None
+    app = None
 
     try:
         consumer = RedisConsumer()
         publisher = RedisPublisher()
         linear_client = LinearClient()
+        mapping_store = RedisTicketMappingStore()
+        app = create_app(mapping_store=mapping_store, publisher=publisher)
         await asyncio.gather(
-            start_consumer(consumer, publisher, linear_client),
+            start_consumer(consumer, publisher, linear_client, mapping_store),
             run_uvicorn(app, port=8002),
         )
     finally:
@@ -60,6 +65,8 @@ async def main():
             await consumer.close()
         if publisher:
             await publisher.close()
+        if mapping_store:
+            await mapping_store.close()
         logger.info("Service ticket-service stopped")
 
 

@@ -275,7 +275,8 @@ class TestCreateEngineeringTicket:
         assert len(reporter_calls) == 0
 
     @pytest.mark.asyncio
-    async def test_publishes_ticket_mapping_on_success(self):
+    async def test_no_ticket_mapping_pubsub_publish(self):
+        """ticket-mappings PubSub removed in Story 4.3 — mapping uses Redis hash store now."""
         command = TicketCommand(**_valid_ticket_command_payload())
         ticket_creator = AsyncMock()
         ticket_creator.create_issue.return_value = _mock_linear_issue()
@@ -286,11 +287,7 @@ class TestCreateEngineeringTicket:
 
         calls = publisher.publish.call_args_list
         mapping_calls = [c for c in calls if c[0][0] == "ticket-mappings"]
-        assert len(mapping_calls) == 1
-        payload = mapping_calls[0][0][2]
-        assert payload["linear_ticket_id"] == "issue-uuid-123"
-        assert payload["incident_id"] == "inc-200"
-        assert payload["identifier"] == "ENG-42"
+        assert len(mapping_calls) == 0
 
     @pytest.mark.asyncio
     async def test_linear_failure_publishes_error_no_notifications(self):

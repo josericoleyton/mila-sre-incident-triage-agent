@@ -1,11 +1,15 @@
 import hashlib
 import hmac
 import logging
+import uuid
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from src import config
+from src.domain.services import handle_resolution_webhook
+from src.ports.outbound import EventPublisher
+from src.ports.ticket_mapping import TicketMappingStore
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +19,10 @@ def verify_linear_signature(body: bytes, signature: str, secret: str) -> bool:
     return hmac.compare_digest(expected, signature)
 
 
-def create_app() -> FastAPI:
+def create_app(
+    mapping_store: TicketMappingStore | None = None,
+    publisher: EventPublisher | None = None,
+) -> FastAPI:
     app = FastAPI(title="ticket-service-webhooks", docs_url=None, redoc_url=None)
 
     @app.post("/webhooks/linear")
@@ -42,7 +49,15 @@ def create_app() -> FastAPI:
         identifier = payload.get("id", "no-id")
         logger.info("Linear webhook received: type=%s action=%s id=%s", webhook_type, action, identifier)
 
-        # Stub: actual webhook event handlers are added in Story 4.3
+        # Handle resolution webhooks (Story 4.3)
+        if mapping_store is not None and publisher is not None:
+            event_id = str(uuid.uuid4())
+            logger.info("Processing webhook with event_id=%s", event_id)
+            try:
+                await handle_resolution_webhook(payload, mapping_store, publisher, event_id)
+            except Exception:
+                logger.exception("Resolution handler failed for event_id=%s", event_id)
+
         return JSONResponse(status_code=200, content={"status": "ok"})
 
     @app.get("/health")

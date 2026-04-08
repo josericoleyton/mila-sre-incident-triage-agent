@@ -56,6 +56,8 @@ class TriageState:
     code_context: str = ""
     # Triage duration tracking (monotonic clock)
     triage_started_at: Optional[float] = None
+    # Forced escalation for proactive (systemIntegration) incidents
+    forced_escalation: bool = False
 
 
 @dataclass

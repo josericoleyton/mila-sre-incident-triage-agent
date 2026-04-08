@@ -30,6 +30,27 @@ def _format_ticket_body(state: TriageState, result: TriageResult) -> str:
     incident = state.incident
     sections: list[str] = []
 
+    # Proactive detection banner for systemIntegration incidents
+    if state.source_type == "systemIntegration":
+        sections.append(
+            "## \U0001f916 Proactive Detection\n"
+            "**This incident was auto-detected from production telemetry (not user-reported)**"
+        )
+        trace_data = incident.get("trace_data") or {}
+        if trace_data:
+            trace_lines = []
+            if trace_data.get("service_name"):
+                trace_lines.append(f"- **Service:** {trace_data['service_name']}")
+            if trace_data.get("trace_id"):
+                trace_lines.append(f"- **Trace ID:** `{trace_data['trace_id']}`")
+            if trace_data.get("status_code"):
+                trace_lines.append(f"- **Status Code:** {trace_data['status_code']}")
+            if trace_data.get("error_message"):
+                # Fence error message to prevent markdown injection
+                trace_lines.append(f"- **Error:** ```{trace_data['error_message']}```")
+            if trace_lines:
+                sections.append("## \U0001f4e1 OTEL Trace Metadata\n" + "\n".join(trace_lines))
+
     # Affected files
     if result.file_refs:
         file_lines = "\n".join(f"- `{ref}`" for ref in result.file_refs)
@@ -124,7 +145,7 @@ def _build_triage_completed_payload(state: TriageState, result: TriageResult, du
         "confidence": result.confidence,
         "reasoning_summary": result.reasoning[:500] if result.reasoning else "",
         "severity_assessment": result.severity_assessment,
-        "forced_escalation": False,  # TODO(Story 3.7): derive from confidence/severity analysis
+        "forced_escalation": state.forced_escalation,
         "reescalation": state.reescalation,
         "event_id": state.event_id,
         "duration_ms": duration_ms,
@@ -152,6 +173,11 @@ class GenerateOutputNode(BaseNode[TriageState, TriageDeps, TriageResult]):
             return End(fallback)
 
         result = state.triage_result
+
+        # Story 3.5: Force bug classification for proactive (systemIntegration) incidents
+        if state.source_type == "systemIntegration":
+            result.classification = Classification.bug
+            state.forced_escalation = True
 
         logger.info(
             "GenerateOutputNode: classification=%s, confidence=%.2f, source_type=%s (event_id=%s)",

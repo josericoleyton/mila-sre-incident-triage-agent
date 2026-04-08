@@ -1,7 +1,7 @@
 # Story 3.5: Proactive Incident Processing (systemIntegration — Always Escalate)
 
 > **Epic:** 3 — AI Triage & Code Analysis (Agent)
-> **Status:** ready-for-dev
+> **Status:** review
 > **Priority:** 🟠 High — OTEL differentiator
 > **Depends on:** Story 3.4 (Bug path publishing)
 > **FRs:** FR25
@@ -29,20 +29,20 @@
 
 ## Tasks / Subtasks
 
-- [ ] **1. Add source_type conditional in GenerateOutputNode**
+- [x] **1. Add source_type conditional in GenerateOutputNode**
   - In `graph/nodes/generate_output.py`
   - Check: if `state.source_type == "systemIntegration"` → force classification to `bug`
   - The LLM still runs its full analysis — only the final decision is overridden
 
-- [ ] **2. Add forced_escalation indicator to ticket body**
+- [x] **2. Add forced_escalation indicator to ticket body**
   - Prepend "🤖 Proactive Detection" banner to the ticket body
   - Include OTEL metadata prominently: service_name, trace_id, status_code, error_message
 
-- [ ] **3. Set forced_escalation in triage.completed event**
+- [x] **3. Set forced_escalation in triage.completed event**
   - Add `forced_escalation: true` to the observability event payload
   - Add `source_type: "systemIntegration"` for filtering
 
-- [ ] **4. Skip reporter notification for proactive incidents**
+- [x] **4. Skip reporter notification for proactive incidents**
   - `reporter_slack_user_id` is null for systemIntegration events
   - Ensure the ticket command reflects this (Ticket-Service won't send reporter DM)
 
@@ -73,4 +73,26 @@ if state.source_type == "systemIntegration":
 
 ## Chat Command Log
 
-*Dev agent: record your implementation commands and decisions here.*
+### Dev Agent Record — 2026-04-08
+
+**Implementation Notes:**
+- Added `forced_escalation: bool = False` field to `TriageState` in `models.py`
+- In `GenerateOutputNode.run()`: when `source_type == "systemIntegration"`, force `classification = bug` and set `forced_escalation = True` — LLM analysis still runs fully, only final decision is overridden
+- In `_format_ticket_body()`: prepend proactive detection banner with OTEL trace metadata (service_name, trace_id, status_code, error_message) for systemIntegration incidents; partial trace_data handled gracefully
+- In `_build_triage_completed_payload()`: replaced hardcoded `False` with `state.forced_escalation`
+- Task 4 (reporter notification): `reporter_slack_user_id` is already `None` for OTEL incidents; `.get()` default returns `""` — no code change needed, Ticket-Service won't send DM
+- Error message in trace_data is fenced in backticks to prevent markdown injection
+
+**Tests Added (17 new):**
+- `TestProactiveForcesBugClassification` (6 tests): force-escalation logic, state mutation, ticket publishing, preserves analysis fields
+- `TestProactiveTicketBody` (6 tests): banner presence, OTEL metadata, missing/partial trace_data, banner ordering
+- `TestProactiveTriageCompletedPayload` (4 tests): forced_escalation flag, source_type, end-to-end pipeline
+- `TestProactiveReporterHandling` (2 tests): empty reporter_slack_user_id for OTEL incidents
+- `TestTriageStateForcedEscalation` (2 tests): field default and explicit set
+
+**Test Results:** 215 passed, 1 pre-existing failure (test_ui_nginx — unrelated)
+
+**Files Changed:**
+- `services/agent/src/domain/models.py` — added `forced_escalation` field to `TriageState`
+- `services/agent/src/graph/nodes/generate_output.py` — force-escalation logic, proactive banner, OTEL metadata, dynamic forced_escalation in payload
+- `tests/test_triage_command_publishing.py` — 17 new Story 3.5 tests

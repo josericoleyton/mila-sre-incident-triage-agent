@@ -692,3 +692,349 @@ class TestTriageStateStartedAt:
         now = time.monotonic()
         state = m.TriageState(incident_id="x", source_type="userIntegration", triage_started_at=now)
         assert state.triage_started_at == now
+
+
+# ===========================================================================
+# Story 3.5: Proactive Incident Processing (systemIntegration — Always Escalate)
+# ===========================================================================
+
+def _otel_incident(**overrides) -> dict:
+    """Build a systemIntegration (OTEL) incident with trace_data."""
+    base = {
+        "incident_id": "inc-otel-500",
+        "title": "High error rate on Ordering.API",
+        "description": "OTEL alert: error_rate > 5% for 5 minutes",
+        "component": "Ordering",
+        "severity": "High",
+        "reporter_slack_user_id": None,
+        "source_type": "systemIntegration",
+        "trace_data": {
+            "service_name": "ordering-api",
+            "trace_id": "abc123def456",
+            "status_code": "500",
+            "error_message": "Connection refused to downstream service",
+        },
+    }
+    base.update(overrides)
+    return base
+
+
+def _make_otel_state(**overrides):
+    m = _load_models()
+    incident = overrides.pop("incident", _otel_incident())
+    defaults = {
+        "incident_id": incident.get("incident_id", "inc-otel-500"),
+        "source_type": "systemIntegration",
+        "event_id": str(uuid.uuid4()),
+        "incident": incident,
+        "reescalation": False,
+        "prompt_injection_detected": False,
+        "triage_started_at": time.monotonic(),
+    }
+    defaults.update(overrides)
+    return m.TriageState(**defaults)
+
+
+# ---------------------------------------------------------------------------
+# Task 1: source_type conditional forces classification to bug
+# ---------------------------------------------------------------------------
+
+class TestProactiveForcesBugClassification:
+    @pytest.mark.asyncio
+    async def test_system_integration_forces_bug_even_if_llm_says_non_incident(self):
+        """AC: classification is always forced to bug for systemIntegration."""
+        from pydantic_graph import End
+
+        publisher = AsyncMock()
+        publisher.publish.return_value = "evt-otel-1"
+
+        state = _make_otel_state()
+        # LLM classifies as non_incident — but should be overridden
+        state.triage_result = _make_non_incident_result()
+
+        ctx = _mock_ctx(state, publisher)
+        mod = _load_generate_output()
+        node = mod.GenerateOutputNode()
+        end_result = await node.run(ctx)
+
+        assert isinstance(end_result, End)
+        assert end_result.data.classification.value == "bug"
+
+    @pytest.mark.asyncio
+    async def test_system_integration_sets_forced_escalation_on_state(self):
+        publisher = AsyncMock()
+        publisher.publish.return_value = "evt-otel-2"
+
+        state = _make_otel_state()
+        state.triage_result = _make_non_incident_result()
+        assert state.forced_escalation is False  # default
+
+        ctx = _mock_ctx(state, publisher)
+        mod = _load_generate_output()
+        node = mod.GenerateOutputNode()
+        await node.run(ctx)
+
+        assert state.forced_escalation is True
+
+    @pytest.mark.asyncio
+    async def test_system_integration_publishes_ticket_create(self):
+        """AC: a ticket.create command is published for systemIntegration."""
+        publisher = AsyncMock()
+        publisher.publish.return_value = "evt-otel-3"
+
+        state = _make_otel_state()
+        state.triage_result = _make_non_incident_result()
+
+        ctx = _mock_ctx(state, publisher)
+        mod = _load_generate_output()
+        node = mod.GenerateOutputNode()
+        await node.run(ctx)
+
+        calls = publisher.publish.call_args_list
+        ticket_calls = [c for c in calls if c[0][0] == "ticket-commands" and c[0][1] == "ticket.create"]
+        assert len(ticket_calls) == 1
+
+    @pytest.mark.asyncio
+    async def test_system_integration_bug_still_publishes_ticket(self):
+        """When LLM already classifies as bug, still force-escalate and publish."""
+        publisher = AsyncMock()
+        publisher.publish.return_value = "evt-otel-4"
+
+        state = _make_otel_state()
+        state.triage_result = _make_bug_result()
+
+        ctx = _mock_ctx(state, publisher)
+        mod = _load_generate_output()
+        node = mod.GenerateOutputNode()
+        await node.run(ctx)
+
+        assert state.forced_escalation is True
+        calls = publisher.publish.call_args_list
+        ticket_calls = [c for c in calls if c[0][0] == "ticket-commands"]
+        assert len(ticket_calls) == 1
+
+    @pytest.mark.asyncio
+    async def test_user_integration_not_force_escalated(self):
+        """userIntegration incidents should NOT be force-escalated."""
+        publisher = AsyncMock()
+        publisher.publish.return_value = "evt-user-1"
+
+        state = _make_state()  # userIntegration
+        state.triage_result = _make_non_incident_result()
+
+        ctx = _mock_ctx(state, publisher)
+        mod = _load_generate_output()
+        node = mod.GenerateOutputNode()
+        await node.run(ctx)
+
+        assert state.forced_escalation is False
+        # non_incident userIntegration should NOT publish ticket.create
+        calls = publisher.publish.call_args_list
+        ticket_calls = [c for c in calls if c[0][0] == "ticket-commands"]
+        assert len(ticket_calls) == 0
+
+    @pytest.mark.asyncio
+    async def test_agent_preserves_analysis_fields(self):
+        """AC: agent still produces confidence, reasoning, file_refs, root_cause, suggested_fix normally."""
+        publisher = AsyncMock()
+        publisher.publish.return_value = "evt-otel-5"
+
+        state = _make_otel_state()
+        result = _make_non_incident_result(
+            confidence=0.92,
+            reasoning="User error — expected behavior",
+        )
+        state.triage_result = result
+
+        ctx = _mock_ctx(state, publisher)
+        mod = _load_generate_output()
+        node = mod.GenerateOutputNode()
+        end_result = await node.run(ctx)
+
+        # Classification forced, but other fields preserved
+        assert end_result.data.classification.value == "bug"
+        assert end_result.data.confidence == 0.92
+        assert end_result.data.reasoning == "User error — expected behavior"
+
+
+# ---------------------------------------------------------------------------
+# Task 2: forced_escalation indicator in ticket body + OTEL metadata
+# ---------------------------------------------------------------------------
+
+class TestProactiveTicketBody:
+    def test_proactive_banner_in_ticket_body(self):
+        """AC: ticket includes proactive detection banner."""
+        mod = _load_generate_output()
+        state = _make_otel_state()
+        result = _make_bug_result()
+        body = mod._format_ticket_body(state, result)
+
+        assert "\U0001f916 Proactive Detection" in body
+        assert "auto-detected from production telemetry" in body
+        assert "not user-reported" in body
+
+    def test_otel_trace_metadata_in_ticket_body(self):
+        """AC: OTEL trace metadata (service name, trace ID, status code, error message) displayed."""
+        mod = _load_generate_output()
+        state = _make_otel_state()
+        result = _make_bug_result()
+        body = mod._format_ticket_body(state, result)
+
+        assert "\U0001f4e1 OTEL Trace Metadata" in body
+        assert "ordering-api" in body
+        assert "abc123def456" in body
+        assert "500" in body
+        assert "Connection refused" in body
+
+    def test_user_integration_no_banner(self):
+        """userIntegration tickets should NOT have proactive banner."""
+        mod = _load_generate_output()
+        state = _make_state()  # userIntegration
+        result = _make_bug_result()
+        body = mod._format_ticket_body(state, result)
+
+        assert "\U0001f916 Proactive Detection" not in body
+        assert "\U0001f4e1 OTEL Trace Metadata" not in body
+
+    def test_otel_missing_trace_data(self):
+        """When trace_data is None, banner still shown but no metadata section."""
+        mod = _load_generate_output()
+        incident = _otel_incident(trace_data=None)
+        state = _make_otel_state(incident=incident)
+        result = _make_bug_result()
+        body = mod._format_ticket_body(state, result)
+
+        assert "\U0001f916 Proactive Detection" in body
+        assert "\U0001f4e1 OTEL Trace Metadata" not in body
+
+    def test_otel_partial_trace_data(self):
+        """When trace_data has only some fields, only those are shown."""
+        mod = _load_generate_output()
+        incident = _otel_incident(trace_data={"service_name": "catalog-api"})
+        state = _make_otel_state(incident=incident)
+        result = _make_bug_result()
+        body = mod._format_ticket_body(state, result)
+
+        assert "catalog-api" in body
+        assert "Trace ID" not in body
+        assert "Status Code" not in body
+
+    def test_proactive_banner_appears_before_affected_files(self):
+        """Banner should be the first section in the ticket body."""
+        mod = _load_generate_output()
+        state = _make_otel_state()
+        result = _make_bug_result()
+        body = mod._format_ticket_body(state, result)
+
+        banner_pos = body.index("\U0001f916 Proactive Detection")
+        files_pos = body.index("\U0001f4cd Affected Files")
+        assert banner_pos < files_pos
+
+
+# ---------------------------------------------------------------------------
+# Task 3: forced_escalation in triage.completed event
+# ---------------------------------------------------------------------------
+
+class TestProactiveTriageCompletedPayload:
+    def test_forced_escalation_true_for_system_integration(self):
+        """AC: triage.completed includes forced_escalation: true."""
+        mod = _load_generate_output()
+        state = _make_otel_state()
+        state.forced_escalation = True
+        result = _make_bug_result()
+        payload = mod._build_triage_completed_payload(state, result, duration_ms=1000)
+
+        assert payload["forced_escalation"] is True
+
+    def test_source_type_in_triage_completed(self):
+        """AC: triage.completed includes source_type: systemIntegration."""
+        mod = _load_generate_output()
+        state = _make_otel_state()
+        result = _make_bug_result()
+        payload = mod._build_triage_completed_payload(state, result, duration_ms=1000)
+
+        assert payload["source_type"] == "systemIntegration"
+
+    def test_forced_escalation_false_for_user_integration(self):
+        mod = _load_generate_output()
+        state = _make_state()  # userIntegration, forced_escalation defaults False
+        result = _make_bug_result()
+        payload = mod._build_triage_completed_payload(state, result, duration_ms=1000)
+
+        assert payload["forced_escalation"] is False
+
+    @pytest.mark.asyncio
+    async def test_full_pipeline_triage_completed_has_forced_escalation(self):
+        """End-to-end: forced_escalation flows through to triage.completed event."""
+        publisher = AsyncMock()
+        publisher.publish.return_value = "evt-otel-tc"
+
+        state = _make_otel_state()
+        state.triage_result = _make_non_incident_result()
+
+        ctx = _mock_ctx(state, publisher)
+        mod = _load_generate_output()
+        node = mod.GenerateOutputNode()
+        await node.run(ctx)
+
+        calls = publisher.publish.call_args_list
+        completed_calls = [c for c in calls if c[0][1] == "triage.completed"]
+        assert len(completed_calls) == 1
+
+        payload = completed_calls[0][0][2]
+        assert payload["forced_escalation"] is True
+        assert payload["source_type"] == "systemIntegration"
+        assert payload["classification"] == "bug"
+
+
+# ---------------------------------------------------------------------------
+# Task 4: Skip reporter notification for proactive incidents
+# ---------------------------------------------------------------------------
+
+class TestProactiveReporterHandling:
+    def test_reporter_slack_user_id_empty_for_otel(self):
+        """AC: reporter_slack_user_id is null/empty for systemIntegration events."""
+        mod = _load_generate_output()
+        state = _make_otel_state()
+        result = _make_bug_result()
+        cmd = mod._build_ticket_command(state, result)
+
+        # reporter_slack_user_id should be empty (None from incident -> "" via .get default)
+        assert cmd["reporter_slack_user_id"] in ("", None)
+
+    @pytest.mark.asyncio
+    async def test_full_pipeline_ticket_has_no_reporter(self):
+        """End-to-end: proactive ticket command has no reporter_slack_user_id."""
+        publisher = AsyncMock()
+        publisher.publish.return_value = "evt-otel-rpt"
+
+        state = _make_otel_state()
+        state.triage_result = _make_bug_result()
+
+        ctx = _mock_ctx(state, publisher)
+        mod = _load_generate_output()
+        node = mod.GenerateOutputNode()
+        await node.run(ctx)
+
+        calls = publisher.publish.call_args_list
+        ticket_calls = [c for c in calls if c[0][1] == "ticket.create"]
+        assert len(ticket_calls) == 1
+
+        payload = ticket_calls[0][0][2]
+        assert payload["reporter_slack_user_id"] in ("", None)
+
+
+# ---------------------------------------------------------------------------
+# TriageState: forced_escalation field tests
+# ---------------------------------------------------------------------------
+
+class TestTriageStateForcedEscalation:
+    def test_default_false(self):
+        m = _load_models()
+        state = m.TriageState(incident_id="x", source_type="userIntegration")
+        assert state.forced_escalation is False
+
+    def test_can_set_true(self):
+        m = _load_models()
+        state = m.TriageState(incident_id="x", source_type="systemIntegration", forced_escalation=True)
+        assert state.forced_escalation is True

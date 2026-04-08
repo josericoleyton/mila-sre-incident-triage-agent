@@ -1,7 +1,7 @@
 # Story 4.1: Ticket-Service Scaffold with Redis Consumer & Webhook Listener
 
 > **Epic:** 4 — Ticket Lifecycle Management (Ticket-Service)
-> **Status:** ready-for-dev
+> **Status:** done
 > **Priority:** 🔴 Critical — Core MVP path
 > **Depends on:** Story 1.2 (Redis infrastructure)
 > **FRs:** FR5
@@ -32,33 +32,45 @@
 
 ## Tasks / Subtasks
 
-- [ ] **1. Wire dual inbound adapters in main.py**
+- [x] **1. Wire dual inbound adapters in main.py**
   - Start both Redis consumer loop AND FastAPI webhook server concurrently using `asyncio`
   - Redis consumer listens on `ticket-commands` channel
   - FastAPI runs on port 8002 (internal only — proxied via nginx)
 
-- [ ] **2. Implement Redis consumer**
+- [x] **2. Implement Redis consumer**
   - `adapters/inbound/redis_consumer.py`
   - Subscribe to `ticket-commands` channel
   - Validate envelope, deserialize payload into `TicketCommand` domain model
   - Route by `action` field to appropriate handler
 
-- [ ] **3. Implement webhook listener**
+- [x] **3. Implement webhook listener**
   - `adapters/inbound/webhook_listener.py` — FastAPI app
   - `POST /webhooks/linear` endpoint
   - Verify HMAC signature using `LINEAR_WEBHOOK_SECRET` from config
   - Parse webhook JSON payload
   - Return 401 if signature invalid, 200 if processed
 
-- [ ] **4. HMAC signature verification**
+- [x] **4. HMAC signature verification**
   - Linear sends `X-Linear-Signature` header
   - Compute HMAC-SHA256 of request body using `LINEAR_WEBHOOK_SECRET`
   - Compare signatures (constant-time comparison to prevent timing attacks)
 
-- [ ] **5. Error handling**
+- [x] **5. Error handling**
   - Malformed Redis events: log warning, skip, continue
   - Invalid webhook signature: 401 response, log warning
   - Unrecognized action: log warning, skip
+
+### Review Findings
+
+- [x] [Review][Patch] Non-dict JSON webhook payload crashes `.get()` call [webhook_listener.py:35-36] — added `isinstance(payload, dict)` guard, returns 400
+- [x] [Review][Patch] Init error in `main.py` finally block causes NameError [main.py:38-47] — defensive `consumer = publisher = None` + conditional close
+- [x] [Review][Patch] ER3 violation: webhook logs missing correlation ID [webhook_listener.py:38] — added `id` field extraction to log line
+- [x] [Review][Patch] Missing trailing newline at end of file [webhook_listener.py, services.py] — added
+- [x] [Review][Patch] No startup warning when LINEAR_WEBHOOK_SECRET is empty [main.py / config.py] — added startup warning log
+- [x] [Review][Defer] asyncio.gather doesn't restart on single-task failure [main.py:40-43] — deferred, pre-existing pattern shared by agent service
+- [x] [Review][Defer] No request size limit on webhook endpoint [webhook_listener.py] — deferred, nginx proxy handles upstream
+- [x] [Review][Defer] No rate limiting on webhook endpoint [webhook_listener.py] — deferred, nginx proxy handles upstream
+- [x] [Review][Defer] Handler exception crashes redis consumer loop [redis_consumer.py:52] — deferred, pre-existing code not changed by this story
 
 ## Dev Notes
 
@@ -100,6 +112,24 @@ def verify_signature(body: bytes, signature: str, secret: str) -> bool:
 - Story 4.2: Ticket creation handler (this story's consumer routes to it)
 - Story 4.3: Resolution webhook handler
 
+## File List
+
+- `services/ticket-service/src/main.py` — Modified: wired dual inbound adapters (Redis consumer + FastAPI) with asyncio.gather
+- `services/ticket-service/src/domain/services.py` — Implemented: handle_ticket_command with deserialization, action routing, error publishing
+- `services/ticket-service/src/adapters/inbound/webhook_listener.py` — Implemented: FastAPI app with POST /webhooks/linear, HMAC verification, health endpoint
+- `tests/test_ticket_service_scaffold.py` — Created: 22 tests covering all ACs
+
+## Change Log
+
+- 2026-04-08: Story 4.1 implemented — ticket-service scaffold with Redis consumer, webhook listener, HMAC verification, and error handling
+
 ## Chat Command Log
 
-*Dev agent: record your implementation commands and decisions here.*
+### Implementation Decisions
+- `main.py` uses `asyncio.gather()` to run Redis consumer and uvicorn server concurrently, with proper cleanup in `finally` block
+- `webhook_listener.py` imports `config` module (not individual names) so `LINEAR_WEBHOOK_SECRET` is read at request time — enables testability
+- `domain/services.py` follows agent service pattern: extract event_id, validate with Pydantic, route by action, publish errors to `errors` channel
+- HMAC verification uses `hmac.compare_digest()` for constant-time comparison (prevents timing attacks)
+- `SUPPORTED_ACTIONS` set in services.py allows easy extension for Story 4.2 handlers
+- Redis consumer (pre-existing from Story 1.2) already handles envelope validation and malformed JSON gracefully
+- 22 tests: 3 model, 5 domain service, 5 HMAC, 4 webhook endpoint (via Starlette TestClient), 4 main.py wiring, 1 status event model

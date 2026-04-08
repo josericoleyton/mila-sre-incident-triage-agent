@@ -1,0 +1,6 @@
+pytest
+pytest-asyncio
+pydantic-ai[all]
+redis[hiredis]
+httpx
+pydantic

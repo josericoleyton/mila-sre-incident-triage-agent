@@ -4,9 +4,318 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Mila — Incident Report</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; color-scheme: light; }
+.shell { background: #F0F4FF; min-height: 600px; font-family: Verdana, Geneva, sans-serif; }
+
+.topbar { background: #fff; border-bottom: 0.5px solid #DDE3F5; padding: 0 24px; }
+.topbar-inner { max-width: 760px; margin: 0 auto; height: 56px; display: flex; align-items: center; justify-content: space-between; }
+.logo { display: flex; align-items: center; gap: 10px; }
+.logo-mark { width: 28px; height: 28px; background: #0D1B4B; border-radius: 8px; display: flex; align-items: center; justify-content: center; }
+.logo-mark span { font-family: Georgia, serif; font-size: 14px; font-weight: 700; color: #fff; }
+.logo-text { font-size: 18px; font-weight: 700; color: #0D1B4B; font-family: Georgia, serif; letter-spacing: -0.02em; }
+.logo-sub { font-size: 11px; color: #8896C0; margin-left: 2px; }
+.user-pill { display: flex; align-items: center; gap: 8px; }
+.user-avatar { width: 30px; height: 30px; border-radius: 50%; background: #EEF2FF; border: 1.5px solid #C5D0F5; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: #3B5BDB; font-family: Georgia, serif; }
+.user-info { display: flex; flex-direction: column; }
+.user-name { font-size: 12px; font-weight: 700; color: #0D1B4B; line-height: 1.2; }
+.user-role { font-size: 10px; color: #8896C0; }
+.status-dot { width: 6px; height: 6px; border-radius: 50%; background: #2DC653; margin-left: 4px; }
+
+.progress-bar { height: 2px; background: #E8EDFF; }
+.progress-fill { height: 100%; width: 0%; background: #3B5BDB; transition: width 0.4s ease; }
+
+.content { padding: 40px 24px 60px; }
+.content-inner { max-width: 760px; margin: 0 auto; }
+
+.page-header { margin-bottom: 28px; }
+.page-eyebrow { font-size: 10px; font-weight: 700; color: #3B5BDB; letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 8px; }
+.page-heading { font-size: 26px; font-weight: 700; color: #0D1B4B; font-family: Georgia, serif; letter-spacing: -0.02em; line-height: 1.2; margin-bottom: 6px; }
+.page-sub { font-size: 13px; color: #6B7DB3; line-height: 1.6; }
+
+.mila-bar { display: flex; align-items: flex-start; gap: 12px; background: #fff; border: 0.5px solid #DDE3F5; border-left: 3px solid #3B5BDB; border-radius: 0 12px 12px 0; padding: 14px 18px; margin-bottom: 28px; }
+.mila-avatar { width: 32px; height: 32px; border-radius: 50%; background: #EEF2FF; border: 1.5px solid #3B5BDB; display: flex; align-items: center; justify-content: center; font-size: 13px; color: #3B5BDB; font-weight: 700; font-family: Georgia, serif; flex-shrink: 0; }
+.mila-content { flex: 1; }
+.mila-name { font-size: 11px; font-weight: 700; color: #3B5BDB; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 4px; }
+.mila-msg { font-size: 13px; color: #4A5580; font-family: Georgia, serif; font-style: italic; line-height: 1.6; }
+.mila-cursor { display: inline-block; width: 7px; height: 13px; background: #3B5BDB; margin-left: 2px; vertical-align: middle; animation: blink 1s step-end infinite; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+.form-card { background: #fff; border: 0.5px solid #DDE3F5; border-radius: 16px; overflow: hidden; }
+.form-section { padding: 24px 32px; border-bottom: 0.5px solid #F0F4FF; }
+.form-section:last-child { border-bottom: none; }
+.section-label { font-size: 11px; font-weight: 700; color: #8896C0; letter-spacing: 0.04em; margin-bottom: 16px; }
+.optional-tag { font-size: 10px; font-weight: 400; color: #B8C4E0; margin-left: 6px; letter-spacing: 0; }
+
+.field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+.field:last-child { margin-bottom: 0; }
+.flabel { font-size: 11px; font-weight: 700; color: #8896C0; letter-spacing: 0.04em; }
+
+.field input, .field textarea, .field select {
+  background: #F7F9FF !important;
+  border: 0.5px solid #DDE3F5 !important;
+  border-radius: 10px;
+  color: #0D1B4B !important;
+  font-family: Verdana, Geneva, sans-serif;
+  font-size: 13px;
+  padding: 10px 14px;
+  outline: none;
+  transition: border-color 0.15s, background 0.15s;
+  -webkit-appearance: none;
+  appearance: none;
+  color-scheme: light;
+  width: 100%;
+}
+.field input::placeholder, .field textarea::placeholder {
+  color: #B8C4E0 !important;
+  opacity: 0.7 !important;
+  font-size: 11px !important;
+  font-style: italic;
+}
+.field input:focus, .field textarea:focus { border-color: #3B5BDB !important; background: #fff !important; }
+.field textarea { resize: vertical; min-height: 100px; line-height: 1.6; }
+.field select.empty { color: #B8C4E0 !important; font-size: 11px !important; font-style: italic; }
+.field select.filled { color: #0D1B4B !important; font-size: 13px !important; font-style: normal; }
+.field select:focus { border-color: #3B5BDB !important; background: #fff !important; }
+.field select option { color: #0D1B4B; background: #fff; font-size: 13px; font-style: normal; }
+
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 540px) { .two-col { grid-template-columns: 1fr; } }
+
+.sev-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.sev-btn { padding: 10px 4px; border-radius: 10px; border: 0.5px solid #DDE3F5; background: #F7F9FF; color: #8896C0; font-size: 12px; font-family: Verdana, sans-serif; font-weight: 700; cursor: pointer; text-align: center; transition: all 0.15s; }
+.sev-btn:hover { border-color: #3B5BDB; color: #0D1B4B; background: #EEF2FF; }
+.sev-label { font-size: 9px; display: block; margin-top: 2px; font-weight: 400; opacity: 0.7; }
+.sev-low  { border-color: #2DC653; background: #F0FBF4; color: #1A7A3C; }
+.sev-med  { border-color: #F0A500; background: #FEF9ED; color: #8A5A00; }
+.sev-high { border-color: #E86A2A; background: #FEF3EC; color: #8A3A00; }
+.sev-crit { border-color: #E63946; background: #FDECEA; color: #9A1A22; }
+
+.upload-zone { border: 1px dashed #DDE3F5; border-radius: 10px; background: #F7F9FF; padding: 24px 16px; text-align: center; cursor: pointer; transition: all 0.15s; }
+.upload-zone:hover { border-color: #3B5BDB; background: #EEF2FF; }
+.upload-title { font-size: 13px; color: #4A5580; margin-bottom: 4px; }
+.upload-title span { color: #3B5BDB; font-weight: 700; }
+.upload-hint { font-size: 11px; color: #8896C0; }
+
+.attached { display: flex; align-items: center; gap: 10px; background: #EEF2FF; border: 0.5px solid #C5D0F5; border-radius: 8px; padding: 10px 14px; margin-top: 10px; }
+.attached-icon { width: 24px; height: 24px; background: #3B5BDB; border-radius: 6px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.attached-name { font-size: 12px; color: #0D1B4B; flex: 1; font-weight: 700; }
+.attached-remove { font-size: 11px; color: #8896C0; cursor: pointer; }
+.attached-remove:hover { color: #E63946; }
+
+.form-footer { padding: 20px 32px; background: #F7F9FF; border-top: 0.5px solid #DDE3F5; display: flex; align-items: center; justify-content: space-between; }
+.footer-left { display: flex; flex-direction: column; gap: 2px; }
+.footer-reporter { font-size: 11px; color: #8896C0; }
+.footer-reporter strong { color: #0D1B4B; }
+.submit-btn { background: #C8D0E8; color: #8896C0; border: none; border-radius: 10px; padding: 12px 28px; font-size: 14px; font-weight: 700; font-family: Georgia, serif; cursor: pointer; letter-spacing: -0.01em; transition: all 0.15s; display: flex; align-items: center; gap: 8px; }
+.submit-btn.ready { background: #0D1B4B; color: #fff; }
+.submit-btn.ready:hover { background: #1A3080; }
+.submit-btn:active { transform: scale(0.98); }
+
+.success-screen { display: none; text-align: center; padding: 56px 32px; }
+.success-icon { width: 56px; height: 56px; background: #E8F8EE; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px; }
+.success-title { font-size: 22px; font-weight: 700; color: #0D1B4B; font-family: Georgia, serif; margin-bottom: 8px; }
+.success-sub { font-size: 13px; color: #6B7DB3; margin-bottom: 24px; line-height: 1.6; }
+.ticket-id { display: inline-block; background: #EEF2FF; border: 0.5px solid #C5D0F5; border-radius: 8px; padding: 8px 20px; font-size: 13px; font-weight: 700; color: #3B5BDB; font-family: Georgia, serif; letter-spacing: 0.04em; }
+.what-next { margin-top: 32px; text-align: left; }
+.what-next-title { font-size: 11px; font-weight: 700; color: #8896C0; margin-bottom: 14px; }
+.step { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 14px; }
+.step-num { width: 22px; height: 22px; border-radius: 50%; background: #EEF2FF; border: 0.5px solid #C5D0F5; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: #3B5BDB; flex-shrink: 0; margin-top: 1px; }
+.step-text { font-size: 13px; color: #4A5580; line-height: 1.5; }
+</style>
 </head>
 <body>
-    <h1>Mila — Incident Report</h1>
-    <p>Placeholder. Will be replaced by Story 2.1 with the real incident submission form.</p>
+
+<div class="shell">
+  <div class="topbar">
+    <div class="topbar-inner">
+      <div class="logo">
+        <div class="logo-mark"><span>M</span></div>
+        <span class="logo-text">Mila</span>
+        <span class="logo-sub">/ SRE Triage</span>
+      </div>
+      <div class="user-pill">
+        <div class="user-avatar">ML</div>
+        <div class="user-info">
+          <span class="user-name">Ana Botero</span>
+          <span class="user-role">Support Lead</span>
+        </div>
+        <div class="status-dot"></div>
+      </div>
+    </div>
+  </div>
+  <div class="progress-bar"><div class="progress-fill" id="prog"></div></div>
+
+  <div class="content">
+    <div class="content-inner">
+
+      <div id="form-view">
+        <div class="page-header">
+          <p class="page-eyebrow">New incident</p>
+          <h1 class="page-heading">What's happening?</h1>
+          <p class="page-sub">Describe the issue and Mila will triage it automatically.</p>
+        </div>
+
+        <div class="mila-bar">
+          <div class="mila-avatar">M</div>
+          <div class="mila-content">
+            <p class="mila-name">Mila</p>
+            <p class="mila-msg" id="mila-hint">Hi Ana — tell me what you're seeing and I'll take it from there.<span class="mila-cursor"></span></p>
+          </div>
+        </div>
+
+        <div class="form-card">
+
+          <div class="form-section">
+            <p class="section-label">Incident</p>
+            <div class="field">
+              <span class="flabel">Title</span>
+              <input type="text" id="f-title" placeholder="e.g. Checkout throws 500 when coupon with special characters is applied" oninput="updateProgress(); updateHint(this.value)"/>
+            </div>
+            <div class="field">
+              <span class="flabel">Description</span>
+              <textarea id="f-desc" placeholder="What happened, when it started, who is affected, any steps to reproduce..." oninput="updateProgress()"></textarea>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <p class="section-label">Context <span class="optional-tag">optional</span></p>
+            <div class="two-col">
+              <div class="field" style="margin-bottom:0;">
+                <span class="flabel">Affected component</span>
+                <select id="f-comp" class="empty" onchange="handleSelect(this)">
+                  <option value="" disabled selected>Select if known</option>
+                  <option>Checkout / payments</option>
+                  <option>Product catalog</option>
+                  <option>User authentication</option>
+                  <option>Cart / session</option>
+                  <option>Search</option>
+                  <option>Order management</option>
+                  <option>Other / unknown</option>
+                </select>
+              </div>
+              <div class="field" style="margin-bottom:0;">
+                <span class="flabel">Perceived severity</span>
+                <div class="sev-grid">
+                  <div class="sev-btn" onclick="setSev(this)">Low<span class="sev-label">Minor</span></div>
+                  <div class="sev-btn" onclick="setSev(this)">Med<span class="sev-label">Degraded</span></div>
+                  <div class="sev-btn sev-high" onclick="setSev(this)">High<span class="sev-label">Impaired</span></div>
+                  <div class="sev-btn" onclick="setSev(this)">Crit<span class="sev-label">Down</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <p class="section-label">Evidence <span class="optional-tag">optional</span></p>
+            <div class="upload-zone" onclick="document.getElementById('fi').click()">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#3B5BDB" stroke-width="1.5" style="margin:0 auto 8px;display:block;opacity:0.3;">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+              </svg>
+              <p class="upload-title"><span>Attach a file</span> — screenshot, log, or video</p>
+              <p class="upload-hint">PNG · JPG · MP4 · .log · max 50MB</p>
+            </div>
+            <input id="fi" type="file" style="display:none" accept="image/*,video/*,.log,.txt" onchange="showFile(this)"/>
+            <div id="fp" style="display:none" class="attached">
+              <div class="attached-icon">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+              </div>
+              <span class="attached-name" id="fn"></span>
+              <span class="attached-remove" onclick="removeFile()">✕ remove</span>
+            </div>
+          </div>
+
+          <div class="form-footer">
+            <div class="footer-left">
+              <span class="footer-reporter">Reporting as <strong>Ana Botero</strong></span>
+              <span class="footer-reporter" style="font-size:10px;">You'll be notified when this is resolved.</span>
+            </div>
+            <button class="submit-btn" id="submit-btn" onclick="submitForm()">
+              Submit to Mila
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div id="success-view" class="form-card success-screen">
+        <div class="success-icon">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#2DC653" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+        </div>
+        <h2 class="success-title">Mila is on it.</h2>
+        <p class="success-sub">Your report was received, Ana. Mila is analyzing it now<br>and will be in touch shortly.</p>
+        <div class="ticket-id">MILA-<span id="ticket-num">4821</span></div>
+        <div class="what-next">
+          <p class="what-next-title">What happens next</p>
+          <div class="step">
+            <div class="step-num">1</div>
+            <p class="step-text">Mila analyzes your report against the e-commerce codebase and classifies the incident.</p>
+          </div>
+          <div class="step">
+            <div class="step-num">2</div>
+            <p class="step-text">If it's a known behavior, you'll get a specific resolution guide within minutes.</p>
+          </div>
+          <div class="step">
+            <div class="step-num">3</div>
+            <p class="step-text">If it's a real bug, the engineering team gets a triaged ticket and you'll be notified when it's fixed.</p>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+function handleSelect(el) {
+  el.classList.remove('empty');
+  el.classList.add('filled');
+}
+function setSev(el) {
+  const btns = document.querySelectorAll('.sev-btn');
+  const classes = ['sev-low','sev-med','sev-high','sev-crit'];
+  btns.forEach(b => { b.className = 'sev-btn'; });
+  const idx = Array.from(btns).indexOf(el);
+  if (idx >= 0) el.classList.add(classes[idx]);
+}
+function updateProgress() {
+  const title = document.getElementById('f-title').value.trim();
+  const desc = document.getElementById('f-desc').value.trim();
+  const filled = [title, desc].filter(Boolean).length;
+  document.getElementById('prog').style.width = Math.round((filled / 2) * 80) + '%';
+  const btn = document.getElementById('submit-btn');
+  if (title) btn.classList.add('ready');
+  else btn.classList.remove('ready');
+}
+function updateHint(val) {
+  const hints = [
+    "Hi Ana \u2014 tell me what you're seeing and I'll take it from there.",
+    "Got it. Add a description so I can analyze what's happening.",
+    "Good. The more context you give me, the better my triage.",
+    "Looking good. Attach evidence if you have it \u2014 screenshots help a lot."
+  ];
+  const idx = val.length === 0 ? 0 : val.length < 20 ? 1 : val.length < 50 ? 2 : 3;
+  document.getElementById('mila-hint').innerHTML = hints[idx] + '<span class="mila-cursor"></span>';
+}
+function showFile(input) {
+  if (input.files && input.files[0]) {
+    document.getElementById('fn').textContent = input.files[0].name;
+    document.getElementById('fp').style.display = 'flex';
+  }
+}
+function removeFile() {
+  document.getElementById('fi').value = '';
+  document.getElementById('fp').style.display = 'none';
+}
+function submitForm() {
+  document.getElementById('prog').style.width = '100%';
+  document.getElementById('ticket-num').textContent = Math.floor(1000 + Math.random() * 9000);
+  setTimeout(function() {
+    document.getElementById('form-view').style.display = 'none';
+    document.getElementById('success-view').style.display = 'block';
+  }, 400);
+}
+</script>
+
 </body>
 </html>

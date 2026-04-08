@@ -111,9 +111,6 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8080:80"
-    depends_on:
-      - api
-      - ticket-service
     networks:
       - mila-net
 

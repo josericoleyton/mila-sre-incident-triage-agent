@@ -1,7 +1,7 @@
 # Story 3.3a: Triage Graph Scaffold + AnalyzeInput & SearchCode Nodes
 
 > **Epic:** 3 — AI Triage & Code Analysis (Agent)
-> **Status:** review
+> **Status:** done
 > **Priority:** 🔴 Critical — Core MVP path
 > **Depends on:** Story 3.1 (Agent scaffold), Story 3.2 (GitHub tools)
 > **FRs:** FR7, FR8, FR9

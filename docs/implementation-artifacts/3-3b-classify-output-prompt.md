@@ -1,7 +1,7 @@
 # Story 3.3b: ClassifyNode + GenerateOutputNode + System Prompt + Structured Output
 
 > **Epic:** 3 — AI Triage & Code Analysis (Agent)
-> **Status:** review
+> **Status:** done
 > **Priority:** 🔴 Critical — Core MVP path
 > **Depends on:** Story 3.3a (Graph scaffold, AnalyzeInput, SearchCode)
 > **FRs:** FR10, FR12, FR28, FR31

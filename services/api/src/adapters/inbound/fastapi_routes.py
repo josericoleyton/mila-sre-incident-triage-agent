@@ -7,6 +7,7 @@ from typing import Optional
 from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import JSONResponse
 
+from src.adapters.inbound.middleware import check_injection, sanitize_text
 from src.adapters.outbound.redis_publisher import RedisPublisher
 from src.config import SLACK_REPORTER_USER_ID
 from src.domain.services import ValidationError, validate_incident
@@ -52,6 +53,10 @@ async def create_incident(
     severity: Optional[str] = Form(None),
     file: Optional[UploadFile] = File(None),
 ):
+    # --- sanitization (before validation, so stripped text is what gets validated) ---
+    title = sanitize_text(title) or ""
+    description = sanitize_text(description)
+
     # --- validation ---
     file_content_type: str | None = None
     file_size: int | None = None
@@ -68,6 +73,11 @@ async def create_incident(
         return _error_response(422, exc.message, "VALIDATION_ERROR")
 
     incident_id = str(uuid.uuid4())
+
+    # --- injection detection ---
+    prompt_injection_detected = check_injection(
+        {"title": title, "description": description, "component": component}, incident_id
+    )
 
     # --- file storage ---
     attachment_url: str | None = None
@@ -93,6 +103,7 @@ async def create_incident(
         "attachment_url": attachment_url,
         "reporter_slack_user_id": SLACK_REPORTER_USER_ID or None,
         "source_type": "userIntegration",
+        "prompt_injection_detected": prompt_injection_detected,
     }
 
     try:

@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING, Literal, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 if TYPE_CHECKING:
     from src.ports.outbound import CodeRepository, EventPublisher
@@ -30,7 +30,7 @@ class IncidentEvent(BaseModel):
 
 class TriageResult(BaseModel):
     classification: Classification
-    confidence: float
+    confidence: float = Field(ge=0.0, le=1.0)
     reasoning: str
     file_refs: list[str] = []
     root_cause: Optional[str] = None
@@ -48,6 +48,12 @@ class TriageState:
     triage_result: Optional[TriageResult] = None
     reescalation: bool = False
     prompt_injection_detected: bool = False
+    # Signals extracted by AnalyzeInputNode
+    signals: dict = field(default_factory=dict)
+    # Multimodal content (images as base64, logs as text)
+    multimodal_content: list[dict] = field(default_factory=list)
+    # Code context gathered by SearchCodeNode
+    code_context: str = ""
 
 
 @dataclass

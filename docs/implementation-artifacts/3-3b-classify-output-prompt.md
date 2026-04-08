@@ -1,7 +1,7 @@
 # Story 3.3b: ClassifyNode + GenerateOutputNode + System Prompt + Structured Output
 
 > **Epic:** 3 — AI Triage & Code Analysis (Agent)
-> **Status:** ready-for-dev
+> **Status:** review
 > **Priority:** 🔴 Critical — Core MVP path
 > **Depends on:** Story 3.3a (Graph scaffold, AnalyzeInput, SearchCode)
 > **FRs:** FR10, FR12, FR28, FR31
@@ -47,7 +47,7 @@
 
 ## Tasks / Subtasks
 
-- [ ] **1. Implement ClassifyNode**
+- [x] **1. Implement ClassifyNode**
   - `graph/nodes/classify.py`
   - Invokes Pydantic AI Agent with `output_type=TriageResult` for structured output (AR9)
   - System prompt includes: classification criteria, eShop context, untrusted-input framing, output format
@@ -56,12 +56,12 @@
   - Pydantic AI validates output structure automatically
   - On validation failure: retry up to 2 times, then publish `ticket.error`
 
-- [ ] **2. Implement GenerateOutputNode**
+- [x] **2. Implement GenerateOutputNode**
   - `graph/nodes/generate_output.py`
   - Routes based on classification and source_type (Story 3.4, 3.5, 3.6 implement specific paths)
   - This node is the entry point for all output publishing
 
-- [ ] **3. Write system prompt**
+- [x] **3. Write system prompt**
   - `domain/prompts.py`
   - Includes: role definition (SRE triage analyst), eShop architecture context, classification criteria, untrusted-input boundary, output format, confidence/severity instructions
   - Frames all user input as "INCIDENT DATA TO ANALYZE" — never as instructions
@@ -113,4 +113,17 @@ class ClassifyNode(BaseNode[TriageState]):
 
 ## Chat Command Log
 
-*Dev agent: record your implementation commands and decisions here.*
+### Implementation Notes
+- `ClassifyNode` creates a fresh `Agent` per invocation with `output_type=TriageResult` for Pydantic-validated structured output
+- Retry loop: up to 3 attempts (1 + 2 retries). On exhaustion, publishes `ticket.error` to Redis errors channel
+- System prompt frames ALL incident data as untrusted. `PROMPT_INJECTION_ADDENDUM` appended when flag is set
+- `GenerateOutputNode` returns `End[TriageResult]`, terminating the pydantic-graph run. Routing stubs log the decision for Stories 3.4-3.6
+- Graceful fallback: if triage_result is None (all retries failed), GenerateOutputNode returns a zero-confidence non_incident result
+- eShop architecture context embedded in prompt: services, data stores, common error patterns
+- Tests cover: successful classification, retry logic, error publishing, prompt injection flag, routing for bug/non-incident
+
+### Files Changed
+- `services/agent/src/graph/nodes/classify.py` — ClassifyNode with retry logic and structured output
+- `services/agent/src/graph/nodes/generate_output.py` — GenerateOutputNode with routing stubs
+- `services/agent/src/domain/prompts.py` — TRIAGE_SYSTEM_PROMPT + PROMPT_INJECTION_ADDENDUM
+- `tests/test_graph_nodes.py` — tests for classify, generate_output, and prompt content

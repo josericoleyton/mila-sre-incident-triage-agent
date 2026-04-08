@@ -2,9 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Literal, Optional
+from typing import TYPE_CHECKING, Literal, Optional
 
 from pydantic import BaseModel
+
+if TYPE_CHECKING:
+    from src.ports.outbound import CodeRepository, EventPublisher
 
 
 class Classification(str, Enum):
@@ -45,3 +48,9 @@ class TriageState:
     triage_result: Optional[TriageResult] = None
     reescalation: bool = False
     prompt_injection_detected: bool = False
+
+
+@dataclass
+class TriageDeps:
+    github_client: CodeRepository
+    publisher: EventPublisher

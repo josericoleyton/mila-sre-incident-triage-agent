@@ -13,6 +13,13 @@ class TicketCommand(BaseModel):
     incident_id: str
 
 
+class TicketResult(BaseModel):
+    ticket_id: str
+    identifier: str
+    url: str
+    incident_id: str
+
+
 class TicketStatusEvent(BaseModel):
     ticket_id: str
     old_status: str

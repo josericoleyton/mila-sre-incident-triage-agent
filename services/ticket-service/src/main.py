@@ -6,6 +6,7 @@ import uvicorn
 from src import config
 from src.adapters.inbound.redis_consumer import RedisConsumer
 from src.adapters.inbound.webhook_listener import create_app
+from src.adapters.outbound.linear_client import LinearClient
 from src.adapters.outbound.redis_publisher import RedisPublisher
 from src.domain.services import handle_ticket_command
 
@@ -16,9 +17,13 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-async def start_consumer(consumer: RedisConsumer, publisher: RedisPublisher) -> None:
+async def start_consumer(
+    consumer: RedisConsumer,
+    publisher: RedisPublisher,
+    linear_client: LinearClient,
+) -> None:
     async def on_ticket_command(envelope: dict) -> None:
-        await handle_ticket_command(envelope, publisher)
+        await handle_ticket_command(envelope, publisher, ticket_creator=linear_client)
 
     await consumer.subscribe("ticket-commands", on_ticket_command)
 
@@ -37,16 +42,20 @@ async def main():
 
     consumer: RedisConsumer | None = None
     publisher: RedisPublisher | None = None
+    linear_client: LinearClient | None = None
     app = create_app()
 
     try:
         consumer = RedisConsumer()
         publisher = RedisPublisher()
+        linear_client = LinearClient()
         await asyncio.gather(
-            start_consumer(consumer, publisher),
+            start_consumer(consumer, publisher, linear_client),
             run_uvicorn(app, port=8002),
         )
     finally:
+        if linear_client:
+            await linear_client.close()
         if consumer:
             await consumer.close()
         if publisher:

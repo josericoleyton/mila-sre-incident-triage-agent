@@ -194,14 +194,15 @@ class TestHandleTicketCommand:
     @pytest.mark.asyncio
     async def test_valid_create_engineering_ticket(self):
         publisher = AsyncMock()
+        publisher.publish.return_value = "evt-1"
         envelope = _build_envelope(
             "ticket.create", "agent", _valid_ticket_command_payload()
         )
+        # Without ticket_creator, the handler publishes an error for create_engineering_ticket
         result = await handle_ticket_command(envelope, publisher)
-        assert result is not None
-        assert result.action == "create_engineering_ticket"
-        assert result.incident_id == "inc-100"
-        publisher.publish.assert_not_called()
+        assert result is None
+        publisher.publish.assert_called_once()
+        assert publisher.publish.call_args[0][0] == "errors"
 
     @pytest.mark.asyncio
     async def test_unrecognized_action_returns_none(self):

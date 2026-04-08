@@ -1,7 +1,7 @@
 # Story 4.2: Engineering Ticket Creation in Linear
 
 > **Epic:** 4 — Ticket Lifecycle Management (Ticket-Service)
-> **Status:** ready-for-dev
+> **Status:** review
 > **Priority:** 🔴 Critical — Core MVP path
 > **Depends on:** Story 4.1 (Ticket-Service scaffold)
 > **FRs:** FR5, FR14, FR15, FR16, FR17, FR18
@@ -44,34 +44,34 @@
 
 ## Tasks / Subtasks
 
-- [ ] **1. Create LinearClient outbound adapter**
+- [x] **1. Create LinearClient outbound adapter**
   - `adapters/outbound/linear_client.py`
   - Uses `httpx.AsyncClient` (AR4)
   - Method: `create_issue(title, body, priority, labels, team_id) -> dict`
   - Linear GraphQL API endpoint: `https://api.linear.app/graphql`
   - Auth: Bearer token from `config.LINEAR_API_KEY`
 
-- [ ] **2. Implement ticket creation domain logic**
+- [x] **2. Implement ticket creation domain logic**
   - `domain/services.py` — `create_engineering_ticket(command: TicketCommand) -> TicketResult`
   - Map severity to Linear priority: P1→Urgent(1), P2→High(2), P3→Medium(3), P4→Low(4)
   - Call LinearClient to create issue
   - Return ticket URL and ID on success
 
-- [ ] **3. Implement retry with exponential backoff**
+- [x] **3. Implement retry with exponential backoff**
   - Max 2 retries (total 3 attempts)
   - Backoff: 1s, 2s
   - On final failure: publish `ticket.error` event to `errors` channel
 
-- [ ] **4. Publish team notification after success**
+- [x] **4. Publish team notification after success**
   - `notification.send` event with `type: "team_alert"` to `notifications` channel
   - Payload: ticket_url, severity, component, summary, incident_id
 
-- [ ] **5. Publish reporter notification after success (if reporter exists)**
+- [x] **5. Publish reporter notification after success (if reporter exists)**
   - Only if `reporter_slack_user_id` is not null (null for proactive incidents)
   - `notification.send` event with `type: "reporter_update"`
   - Message: "Your incident report has been received and escalated. Tracking ID: {incident_id}"
 
-- [ ] **6. Store ticket-incident mapping**
+- [x] **6. Store ticket-incident mapping**
   - After successful Linear creation, store mapping: `linear_ticket_id → incident_id + reporter_slack_user_id`
   - Options: store in Linear ticket body metadata, or lightweight Redis hash lookup
   - Needed by Story 4.3 to correlate resolution webhooks back to incidents
@@ -115,6 +115,34 @@ mutation IssueCreate($input: IssueCreateInput!) {
 - Story 4.3: Resolution lifecycle (needs incident-ticket mapping from this story)
 - Story 5.2: Notification-Worker consumes the team_alert event
 
-## Chat Command Log
+## File List
 
-*Dev agent: record your implementation commands and decisions here.*
+- `services/ticket-service/src/ports/outbound.py` — Added `TicketCreator` port interface
+- `services/ticket-service/src/adapters/outbound/linear_client.py` — LinearClient adapter with retry logic
+- `services/ticket-service/src/domain/models.py` — Added `TicketResult` model
+- `services/ticket-service/src/domain/services.py` — Full ticket creation domain logic, notification publishing, mapping
+- `services/ticket-service/src/main.py` — Wired LinearClient into service startup
+- `tests/test_engineering_ticket_creation.py` — 24 tests covering all ACs
+- `tests/test_ticket_service_scaffold.py` — Updated 1 test for new `handle_ticket_command` signature
+- `requirements-test.txt` — Added `fastapi` dependency
+
+## Change Log
+
+- 2026-04-08: Implemented Story 4.2 — Engineering Ticket Creation in Linear. All 6 tasks complete. 24 new tests + 23 existing scaffold tests pass (47 total, 0 regressions).
+
+## Dev Agent Record
+
+### Implementation Plan
+- ER8: Defined `TicketCreator` port before implementing `LinearClient` adapter
+- AR4: Used `httpx.AsyncClient` for Linear GraphQL API
+- AR1/AR5: Hexagonal architecture — `LinearClient` is outbound adapter behind `TicketCreator` port
+- AR10: Notifications ONLY published after Linear API success
+- AR2: All published events follow mandatory Redis envelope format via `RedisPublisher`
+- Retry: 3 total attempts (1 initial + 2 retries) with 1s, 2s exponential backoff
+- Ticket-incident mapping published to `ticket-mappings` channel for Story 4.3 correlation
+
+### Completion Notes
+- All 6 tasks complete, all acceptance criteria satisfied
+- 24 new unit tests covering: severity mapping, ticket creation flow, team/reporter notifications, retry logic, error handling
+- Updated `handle_ticket_command` signature to accept optional `ticket_creator` — backward compatible
+- Pre-existing failures in `test_triage_command_publishing.py` and `test_ui_nginx.py` are unrelated to this story

@@ -4,3 +4,4 @@ pydantic-ai[all]
 redis[hiredis]
 httpx
 pydantic
+fastapi

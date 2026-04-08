@@ -1,7 +1,7 @@
 # Story 3.2: eShop Codebase Analysis Tools (GitHub API)
 
 > **Epic:** 3 — AI Triage & Code Analysis (Agent)
-> **Status:** ready-for-dev
+> **Status:** done
 > **Priority:** 🔴 Critical — Core MVP path
 > **Depends on:** Story 3.1 (Agent scaffold)
 > **FRs:** FR9
@@ -37,7 +37,7 @@
 
 ## Tasks / Subtasks
 
-- [ ] **1. Create GitHubClient outbound adapter**
+- [x] **1. Create GitHubClient outbound adapter**
   - `adapters/outbound/github_client.py`
   - Uses `httpx.AsyncClient` (AR4 — never `requests`)
   - Methods: `search_code(query: str) -> list[dict]`, `get_file_content(path: str) -> str`
@@ -45,7 +45,7 @@
   - Auth: Bearer token from `config.GITHUB_TOKEN` (optional)
   - Repository: `dotnet/eShop` (hardcoded for hackathon)
 
-- [ ] **2. Implement search_code tool**
+- [x] **2. Implement search_code tool**
   - `graph/tools/search_code.py`
   - Pydantic AI tool using `@agent.tool` decorator
   - Receives `RunContext[TriageDeps]` for dependency injection
@@ -53,7 +53,7 @@
   - GitHub Code Search API: `GET /search/code?q={query}+repo:dotnet/eShop`
   - Returns formatted list: file path, matched snippet, relevance score
 
-- [ ] **3. Implement read_file tool**
+- [x] **3. Implement read_file tool**
   - `graph/tools/read_file.py`
   - Pydantic AI tool using `@agent.tool` decorator
   - Calls `GitHubClient.get_file_content(path)`
@@ -61,13 +61,13 @@
   - Decodes base64 content from API response
   - Returns file content as plain text string
 
-- [ ] **4. Error handling**
+- [x] **4. Error handling**
   - Rate limit (403/429): return "GitHub API rate limit reached. Try a different query or wait."
   - 404: return "File not found: {path}"
   - Timeout: return "GitHub API timeout. Proceeding with available information."
   - Never raise exceptions — always return descriptive string messages
 
-- [ ] **5. Create TriageDeps dependency container**
+- [x] **5. Create TriageDeps dependency container**
   - Dataclass/model holding `github_client: GitHubClient`
   - Passed to agent via `RunContext` for tool dependency injection
 
@@ -105,6 +105,27 @@ The agent's system prompt should include a brief overview of the eShop repositor
 - Story 3.1: Agent scaffold and TriageDeps
 - Story 3.3a: Graph pipeline that uses these tools (SearchCodeNode)
 
+## File List
+
+- `services/agent/src/ports/outbound.py` — Added `CodeRepository` port interface
+- `services/agent/src/adapters/outbound/github_client.py` — `GitHubClient` adapter (httpx, base64 decode, error handling)
+- `services/agent/src/domain/models.py` — Added `TriageDeps` dataclass
+- `services/agent/src/graph/tools/search_code.py` — `search_code` tool function
+- `services/agent/src/graph/tools/read_file.py` — `read_file` tool function
+- `services/agent/src/graph/tools/__init__.py` — Tool exports
+- `tests/test_eshop_codebase_tools.py` — 24 tests covering all ACs
+
+## Change Log
+
+- **2026-04-08:** Implemented Story 3.2 — GitHubClient adapter, search_code/read_file tools, TriageDeps container, CodeRepository port, full error handling, 24 unit tests (all pass, 0 regressions).
+- **2026-04-08:** Code review — applied 2 patches: (P1) large file truncation guard at 100KB to protect LLM context window, (P2) handle >1MB files where GitHub returns download_url instead of content. Added 2 edge-case tests. 100/100 tests pass.
+
 ## Chat Command Log
 
-*Dev agent: record your implementation commands and decisions here.*
+- Added `CodeRepository` abstract port in `ports/outbound.py` (hexagonal pattern AR1/AR5)
+- Implemented `GitHubClient` with `httpx.AsyncClient`, Bearer auth (optional), rate-limit/404/timeout handling returning descriptive strings (never exceptions)
+- Created `TriageDeps` dataclass in `domain/models.py` holding `github_client: CodeRepository` and `publisher: EventPublisher`
+- Implemented `search_code` tool — calls port, formats top-10 results with snippets, handles error/empty states
+- Implemented `read_file` tool — calls port, returns decoded file content or error string
+- Wrote 24 tests: port compliance, adapter unit tests (success/error paths), tool formatting/routing tests, auth header tests
+- Full regression suite: 98/98 passed

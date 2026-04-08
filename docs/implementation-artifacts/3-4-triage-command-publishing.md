@@ -1,7 +1,7 @@
 # Story 3.4: Triage Command Publishing — Bug Path
 
 > **Epic:** 3 — AI Triage & Code Analysis (Agent)
-> **Status:** ready-for-dev
+> **Status:** done
 > **Priority:** 🔴 Critical — Core MVP path
 > **Depends on:** Story 3.3b (Classification pipeline + GenerateOutputNode)
 > **FRs:** FR13, FR28
@@ -41,12 +41,12 @@
 
 ## Tasks / Subtasks
 
-- [ ] **1. Implement bug path in GenerateOutputNode**
+- [x] **1. Implement bug path in GenerateOutputNode**
   - In `graph/nodes/generate_output.py`
   - Check: `triage_result.classification == Classification.bug`
   - Build `TicketCommand` payload from `TriageResult` fields
 
-- [ ] **2. Format ticket body (markdown)**
+- [x] **2. Format ticket body (markdown)**
   - Build a markdown string with all sections:
     - `📍 Affected Files:` file_refs with line ranges
     - `🔍 Root Cause:` root_cause field
@@ -58,21 +58,26 @@
     - `📊 Confidence:` confidence score + severity_assessment
   - Include low-confidence indicator if below threshold: `🟡 Low Confidence`
 
-- [ ] **3. Publish ticket.create to ticket-commands channel**
+- [x] **3. Publish ticket.create to ticket-commands channel**
   - Use RedisPublisher from Story 1.2
   - Channel: `ticket-commands`
   - Event type: `ticket.create`
   - Payload: full TicketCommand fields
 
-- [ ] **4. Publish triage.completed observability event**
+- [x] **4. Publish triage.completed observability event**
   - Channel: `incidents` (or a dedicated observability channel)
   - Event type: `triage.completed`
   - Payload: incident_id, source_type, classification, confidence, reasoning_summary (metadata only — no raw user input per NFR5), severity_assessment, forced_escalation (bool), reescalation (bool), duration_ms
 
-- [ ] **5. Track triage duration**
+- [x] **5. Track triage duration**
   - Record start time in TriageState when consumer initializes it
   - Calculate `duration_ms` at the end of the pipeline
   - Include in `triage.completed` event
+
+### Review Findings
+- [x] [Review][Patch] Missing `event_id` in ticket.create and triage.completed payloads (ER3 violation) [generate_output.py:95-112,117-127] — `state.event_id` must be propagated into both payload dicts per ER3 correlation requirement
+- [x] [Review][Patch] Incident description can inject markdown into ticket body [generate_output.py:59-62] — User-supplied description interpolated raw; fence in code block or escape leading `#`
+- [x] [Review][Patch] `forced_escalation` hardcoded False with no TODO comment [generate_output.py:124] — Add `# TODO(Story 3.7)` inline comment
 
 ## Dev Notes
 
@@ -123,3 +128,24 @@ Searched for OrderController.cs and found ProcessOrder method. Traced execution 
 ## Chat Command Log
 
 *Dev agent: record your implementation commands and decisions here.*
+
+### Implementation Notes (2026-04-08)
+
+**Files Modified:**
+- `services/agent/src/domain/models.py` — Added `triage_started_at: Optional[float] = None` to `TriageState`
+- `services/agent/src/domain/triage_handler.py` — Added `import time`; set `triage_started_at=time.monotonic()` in both `handle_incident_event` and `handle_reescalation_event`
+- `services/agent/src/graph/nodes/generate_output.py` — Full rewrite: added `_map_severity()`, `_format_ticket_body()`, `_build_ticket_command()`, `_build_triage_completed_payload()`, and publishing logic in `GenerateOutputNode.run()`
+
+**Files Created:**
+- `tests/test_triage_command_publishing.py` — 43 tests covering severity mapping, ticket body formatting, ticket command structure, triage.completed payload, bug/non-incident/fallback paths, duration tracking, publisher error resilience
+
+**Key Decisions:**
+- Severity mapping: critical→P1, high→P2, medium→P3, everything else→P4 (case-insensitive)
+- Duration tracked via `time.monotonic()` for accuracy; set at state creation, computed at output
+- Publisher failures are caught and logged but don't crash the pipeline (resilience)
+- `triage.completed` published for ALL classifications (bug, non_incident, fallback)
+- `forced_escalation` set to `False` pending Story 3.7 implementation
+- `reasoning_summary` truncated to 500 chars; no raw user input included (NFR5)
+- Hexagonal architecture preserved: all publishing via `ctx.deps.publisher` (outbound port)
+
+**Test Results:** 116 passed, 0 failed (43 new + 73 existing)

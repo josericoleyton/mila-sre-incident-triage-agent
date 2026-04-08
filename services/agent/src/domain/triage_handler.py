@@ -1,4 +1,5 @@
 import logging
+import time
 from typing import Awaitable, Callable, Optional
 
 from pydantic import ValidationError
@@ -44,6 +45,7 @@ async def handle_incident_event(
         incident=incident.model_dump(),
         reescalation=False,
         prompt_injection_detected=incident.prompt_injection_detected,
+        triage_started_at=time.monotonic(),
     )
 
     logger.info(
@@ -81,6 +83,7 @@ async def handle_reescalation_event(
         incident=incident.model_dump(),
         reescalation=True,
         prompt_injection_detected=incident.prompt_injection_detected,
+        triage_started_at=time.monotonic(),
     )
 
     logger.info(

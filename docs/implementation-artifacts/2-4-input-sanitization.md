@@ -1,7 +1,7 @@
 # Story 2.4: Input Sanitization & Prompt Injection Detection Middleware
 
 > **Epic:** 2 — Incident Submission Experience (UI + API)
-> **Status:** ready-for-dev
+> **Status:** done
 > **Priority:** 🟡 Medium — Security hardening
 > **Depends on:** Story 2.2 (API endpoint exists)
 > **FRs:** FR29, FR30, FR31
@@ -32,18 +32,18 @@
 
 ## Tasks / Subtasks
 
-- [ ] **1. Create sanitization middleware**
+- [x] **1. Create sanitization middleware**
   - `adapters/inbound/middleware.py` in the API service
   - Register as FastAPI middleware on the app
   - Only applies to `POST /api/incidents` (OTEL webhooks are trusted internal traffic)
 
-- [ ] **2. Implement text sanitization**
+- [x] **2. Implement text sanitization**
   - Strip HTML tags (regex or lightweight library like `bleach` — but prefer regex to avoid dependency)
   - Remove null bytes (`\x00`) and control characters
   - Normalize excessive whitespace (collapse multiple spaces/newlines)
   - Trim leading/trailing whitespace
 
-- [ ] **3. Implement prompt injection pattern detection**
+- [x] **3. Implement prompt injection pattern detection**
   - Regex-based pattern matching for common injection phrases:
     - "ignore previous instructions"
     - "you are now"
@@ -53,7 +53,7 @@
   - Flag detected patterns in a metadata field, do NOT reject the submission
   - Log structured warning: `{ "type": "prompt_injection_detected", "pattern": "<matched>", "incident_id": "..." }`
 
-- [ ] **4. Pass flag to Redis event**
+- [x] **4. Pass flag to Redis event**
   - The `prompt_injection_detected` boolean must be included in the `incident.created` event payload
   - The Agent reads this flag in Story 3.3b to apply extra caution in the system prompt
 
@@ -84,6 +84,17 @@ INJECTION_PATTERNS = [
 - Story 2.2: API endpoint that this middleware wraps
 - Story 3.3b: Agent reads `prompt_injection_detected` flag
 
+## File List
+
+- `services/api/src/adapters/inbound/middleware.py` — **NEW** — sanitize_text, detect_prompt_injection, check_injection
+- `services/api/src/adapters/inbound/fastapi_routes.py` — **MODIFIED** — imports middleware, sanitizes title/description, passes prompt_injection_detected flag to Redis payload
+- `tests/test_input_sanitization.py` — **NEW** — 39 tests (unit + integration) for sanitization and injection detection
+
+## Change Log
+
+- **2026-04-08:** Implemented all 4 tasks. Created middleware.py with regex-based sanitization (HTML strip, control char removal, whitespace normalization) and 8-pattern prompt injection detector. Integrated into create_incident route handler — sanitized text replaces original, injection flag added to Redis event payload. OTEL/Slack webhooks remain untouched (trusted internal traffic). 39 new tests pass, 22 existing tests pass with zero regressions (61 total).
+- **2026-04-08 (review):** Fixed 2 code review findings: (P1) moved sanitization before validation so HTML-only titles like `<b></b>` are correctly rejected as empty; (P2) added `component` field to injection detection check. 1 deferred (ReDoS on `disregard.*instructions` — not exploitable at hackathon scale). 61 tests pass.
+
 ## Chat Command Log
 
-*Dev agent: record your implementation commands and decisions here.*
+**Architecture decision:** Implemented sanitization as functions called from the route handler rather than raw ASGI middleware. FastAPI's multipart form body is a one-shot stream — intercepting it in middleware requires buffering and re-constructing the entire request body. Using imported functions achieves the same before-handler-runs guarantee with cleaner code and no dependency workarounds.

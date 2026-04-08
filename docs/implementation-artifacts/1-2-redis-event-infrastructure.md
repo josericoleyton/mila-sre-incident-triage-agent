@@ -1,7 +1,7 @@
 # Story 1.2: Redis Event Infrastructure & Shared Domain Models
 
 > **Epic:** 1 — Project Foundation & Service Scaffolding
-> **Status:** review
+> **Status:** done
 > **Priority:** 🔴 Critical Path — Blocks Epics 2-7
 > **Depends on:** Story 1.1
 > **FRs:** FR34, FR35

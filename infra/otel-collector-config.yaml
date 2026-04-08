@@ -1,0 +1,30 @@
+# OpenTelemetry Collector Configuration
+# Receives traces from eShop (via .NET Aspire OTLP exporter),
+# filters for error spans, and forwards them to the Mila API
+# as proactive incident detection webhooks.
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+    timeout: 5s
+    send_batch_size: 1024
+
+exporters:
+  # Webhook exporter to Mila API for error-based incident detection
+  # Will be configured in Story 3.5 (Proactive Incident Processing)
+  debug:
+    verbosity: basic
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [debug]

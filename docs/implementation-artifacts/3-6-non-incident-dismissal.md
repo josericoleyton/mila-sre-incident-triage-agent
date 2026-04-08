@@ -1,7 +1,7 @@
 # Story 3.6: Non-Incident Dismissal with Reporter Notification (userIntegration Only)
 
 > **Epic:** 3 — AI Triage & Code Analysis (Agent)
-> **Status:** ready-for-dev
+> **Status:** done
 > **Priority:** 🟡 Medium — Edge case handling
 > **Depends on:** Story 3.3b (Classification pipeline + GenerateOutputNode)
 > **FRs:** FR20, FR21
@@ -36,12 +36,12 @@
 
 ## Tasks / Subtasks
 
-- [ ] **1. Implement non-incident path in GenerateOutputNode**
+- [x] **1. Implement non-incident path in GenerateOutputNode**
   - Check: `triage_result.classification == Classification.non_incident`
   - AND `source_type == "userIntegration"` → publish notification directly
   - AND `source_type == "systemIntegration"` → force bug classification (Story 3.5 logic)
 
-- [ ] **2. Build notification payload**
+- [x] **2. Build notification payload**
   - `type: "reporter_update"`
   - `slack_user_id`: from incident's `reporter_slack_user_id`
   - `message`: `triage_result.resolution_explanation`
@@ -49,19 +49,33 @@
   - `confidence`: from `triage_result.confidence`
   - `allow_reescalation: true`
 
-- [ ] **3. Add low-confidence caveat**
+- [x] **3. Add low-confidence caveat**
   - Read `CONFIDENCE_THRESHOLD` from config (default: 0.75)
   - If confidence < threshold, prepend caveat to message
   - Ensure `allow_reescalation` is always `true` for non-incidents
 
-- [ ] **4. Publish directly to notifications channel**
+- [x] **4. Publish directly to notifications channel**
   - **Key difference from bug path:** Agent publishes DIRECTLY to `notifications` channel
   - Bug path: Agent → ticket-commands → Ticket-Service → notifications
   - Non-incident path: Agent → notifications (bypasses Ticket-Service)
   - This is AR10 compliance
 
-- [ ] **5. Publish triage.completed observability event**
+- [x] **5. Publish triage.completed observability event**
   - Same pattern as Story 3.4 but with `classification: "non_incident"`
+
+### Review Findings
+
+- [x] [Review][Decision] **D1: CONFIDENCE_THRESHOLD default 0.7 vs spec's 0.75** — Fixed: changed config.py default to 0.75 to align with spec [config.py:8]
+- [x] [Review][Decision] **D2: Fallback path (triage_result=None) for userIntegration sends no notification** — Fixed: fallback now publishes notification.send with generic message for userIntegration [generate_output.py:~195-210]
+- [x] [Review][Decision] **D3: Message falls back to reasoning when resolution_explanation is absent** — Fixed: kept reasoning fallback but added warning log when falling back [generate_output.py:~160-168]
+- [x] [Review][Patch] **P1: Empty message when both resolution_explanation and reasoning are falsy** — Fixed: added fallback message "We determined this is not an incident. If you disagree, please re-escalate." [generate_output.py:~169-170]
+- [x] [Review][Patch] **P2: No explicit source_type=="userIntegration" guard before _publish_notification** — Fixed: changed else→elif userIntegration with warning log for unknown source_types [generate_output.py:252-261]
+- [x] [Review][Defer] **W1: Fallback + systemIntegration → no ticket.create published** — pre-existing from fallback block design
+- [x] [Review][Defer] **W2: Empty slack_user_id propagated to notification** — pre-existing pattern from Story 3.4 _build_ticket_command
+- [x] [Review][Defer] **W3: In-place mutation of state.triage_result.classification** — pre-existing from Story 3.5 forced-bug override
+- [x] [Review][Defer] **W4: description triple-backtick injection in _format_ticket_body** — pre-existing from Story 3.4
+- [x] [Review][Defer] **W5: attachment_url markdown injection** — pre-existing, no sanitization on URL interpolation
+- [x] [Review][Defer] **W6: Negative duration_ms if monotonic clock state is stale** — pre-existing edge case
 
 ## Dev Notes
 
@@ -82,6 +96,21 @@
 - Story 5.3: Notification-Worker delivers the Slack DM + re-escalation button
 - Story 3.8: Re-escalation handling when reporter disagrees
 
+## File List
+
+- `services/agent/src/graph/nodes/generate_output.py` — Modified: added `_build_notification_payload()`, `LOW_CONFIDENCE_CAVEAT`, `_publish_notification()` method; replaced Story 3.6 placeholder with actual notification publishing logic
+- `tests/test_triage_command_publishing.py` — Modified: added 20 Story 3.6 tests (TestBuildNotificationPayload, TestNonIncidentDismissalPath, TestNonIncidentNotificationResilience, TestNonIncidentTriageCompleted, TestNonIncidentNFR5Compliance)
+
+## Change Log
+
+- 2026-04-08: Implemented Story 3.6 — Non-incident dismissal with reporter notification. Added `_build_notification_payload()` for `notification.send` events, `_publish_notification()` for direct-to-notifications publishing (AR10), low-confidence caveat logic (CONFIDENCE_THRESHOLD), and 20 comprehensive tests covering payload structure, routing, error resilience, NFR5 compliance, and edge cases.
+- 2026-04-08: Code review fixes — D1: changed CONFIDENCE_THRESHOLD default to 0.75 (spec alignment). D2: fallback path now sends generic notification for userIntegration. D3: added warning log when falling back to reasoning. P1: empty message guard with fallback text. P2: explicit source_type=="userIntegration" guard with warning for unknown types. Added 13 review fix tests (total: 106 in file).
+
 ## Chat Command Log
 
-*Dev agent: record your implementation commands and decisions here.*
+### Implementation Decisions
+- Used existing `CONFIDENCE_THRESHOLD` from config.py (default 0.7) — story mentioned 0.75 but config already had 0.7
+- Fallback message uses `result.reasoning` when `resolution_explanation` is None or empty
+- `_publish_notification` logs metadata only (confidence, has_explanation) per NFR5 — no raw incident/resolution text in logs
+- Non-incident notification published before triage.completed (same ordering as bug path: action first, then observability)
+- systemIntegration non-incidents are still handled by Story 3.5 (forced to bug) — no notification published for those

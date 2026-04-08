@@ -1,7 +1,7 @@
 # Story 3.7: Confidence-Based Decision Quality & Severity Analysis
 
 > **Epic:** 3 — AI Triage & Code Analysis (Agent)
-> **Status:** ready-for-dev
+> **Status:** review
 > **Priority:** 🟢 Low — Agent intelligence polish (demo impact)
 > **Depends on:** Story 3.3b (Classification pipeline), Story 3.4 (Bug path), Story 3.6 (Non-incident path)
 > **FRs:** FR11
@@ -43,27 +43,27 @@
 
 ## Tasks / Subtasks
 
-- [ ] **1. Configure confidence threshold**
+- [x] **1. Configure confidence threshold**
   - `CONFIDENCE_THRESHOLD` in `config.py` (default: 0.75, float)
   - Read from env var
 
-- [ ] **2. Enhance ticket body for low-confidence bugs**
+- [x] **2. Enhance ticket body for low-confidence bugs**
   - In Story 3.4's ticket formatting code
   - If confidence < threshold: add `🟡 Low Confidence` section
   - Include: score, uncertainty reasons from reasoning field
 
-- [ ] **3. Enhance notification for low-confidence non-incidents**
+- [x] **3. Enhance notification for low-confidence non-incidents**
   - In Story 3.6's notification construction
   - Already handled by the caveat logic — verify it works with real confidence values
 
-- [ ] **4. Enhance severity analysis in system prompt**
+- [x] **4. Enhance severity analysis in system prompt**
   - Update `domain/prompts.py` to instruct the agent on severity assessment:
     - Always produce P1-P4 severity with code-based justification
     - If reporter provided severity, acknowledge it and explain any difference
     - If no reporter severity, assess purely from code analysis
   - Severity criteria: P1 (critical/data loss), P2 (major feature broken), P3 (minor/workaround exists), P4 (cosmetic/low impact)
 
-- [ ] **5. Format severity_assessment in ticket body**
+- [x] **5. Format severity_assessment in ticket body**
   - Include agent's severity, reporter's input (if provided), delta explanation
   - Example: "Agent severity: P2 (checkout flow impacted, workaround exists). Reporter indicated: High. Delta: Agent downgraded because the affected path only triggers on empty carts."
 
@@ -89,4 +89,27 @@
 
 ## Chat Command Log
 
-*Dev agent: record your implementation commands and decisions here.*
+### Implementation Notes (2026-04-08)
+
+**Task 1 — CONFIDENCE_THRESHOLD:** Already existed in `services/agent/src/config.py` from prior stories. Default 0.75, env-configurable.
+
+**Task 2 — Low-confidence bug ticket body:** Replaced the single-line `## 📊 Assessment` section with two new sections:
+- `## 📊 Severity Assessment` — shows agent severity (P1-P4), reporter's indicated severity, and delta explanation
+- `## 🔎 Confidence` — shows confidence score; when below threshold, adds `🟡 Low Confidence` banner with score, manual review note, and full uncertainty reasoning
+
+**Task 3 — Low-confidence non-incident notification:** Verified existing `_build_notification_payload` already prepends `LOW_CONFIDENCE_CAVEAT` and sets `allow_reescalation: True` when confidence < threshold. No code changes needed.
+
+**Task 4 — System prompt severity analysis:** Enhanced `TRIAGE_SYSTEM_PROMPT` with:
+- Explicit P1-P4 severity criteria (Critical/High/Medium/Low) with descriptions
+- Instructions to acknowledge reporter severity and explain any delta
+- Instructions to assess purely from code when no reporter severity provided
+
+**Task 5 — Severity assessment formatting:** Merged into Task 2 implementation. The ticket body now includes agent severity with justification, reporter input acknowledgement, and delta explanation when severities differ.
+
+**Tests:** Created `tests/test_confidence_severity.py` with 28 tests. Updated 3 assertions in `tests/test_triage_command_publishing.py` for renamed sections. Full suite: 285 passed, 1 pre-existing failure (nginx unrelated).
+
+### Files Changed
+- `services/agent/src/graph/nodes/generate_output.py` — replaced Assessment section with Severity Assessment + Confidence sections
+- `services/agent/src/domain/prompts.py` — enhanced severity assessment instructions in system prompt
+- `tests/test_confidence_severity.py` — new test file (28 tests)
+- `tests/test_triage_command_publishing.py` — updated 3 assertions for renamed sections

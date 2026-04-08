@@ -172,7 +172,8 @@ class TestFormatTicketBody:
         assert "## 🔗 Tracking" in body
         assert "## 📎 Attachments" in body
         assert "## 🧠 Triage Reasoning" in body
-        assert "## 📊 Assessment" in body
+        assert "## 📊 Severity Assessment" in body
+        assert "## 🔎 Confidence" in body
 
     def test_file_refs_rendered(self):
         mod = _load_generate_output()
@@ -284,7 +285,7 @@ class TestFormatTicketBody:
         result = _make_bug_result(confidence=0.45)
         body = mod._format_ticket_body(state, result)
         assert "🟡" in body
-        assert "Low confidence" in body
+        assert "Low Confidence" in body
 
     def test_no_low_confidence_when_above_threshold(self):
         mod = _load_generate_output()
@@ -488,7 +489,8 @@ class TestGenerateOutputNodeBugPath:
         assert "🔗 Tracking" in body
         assert "📎 Attachments" in body
         assert "🧠 Triage Reasoning" in body
-        assert "📊 Assessment" in body
+        assert "📊 Severity Assessment" in body
+        assert "🔎 Confidence" in body
 
 
 # ---------------------------------------------------------------------------

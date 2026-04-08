@@ -1,0 +1,6 @@
+fastapi
+uvicorn[standard]
+redis[hiredis]
+python-multipart
+pydantic
+httpx

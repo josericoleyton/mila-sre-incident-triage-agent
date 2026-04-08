@@ -139,6 +139,46 @@ def _build_ticket_command(state: TriageState, result: TriageResult) -> dict:
     }
 
 
+LOW_CONFIDENCE_CAVEAT = (
+    "I'm less certain about this classification. "
+    "If this doesn't match what you're seeing, please re-escalate."
+)
+
+
+FALLBACK_NON_INCIDENT_MESSAGE = (
+    "We determined this is not an incident. If you disagree, please re-escalate."
+)
+
+FALLBACK_CLASSIFICATION_FAILED_MESSAGE = (
+    "We couldn't fully analyze your report. Please contact an engineer for assistance."
+)
+
+
+def _build_notification_payload(state: TriageState, result: TriageResult) -> dict:
+    """Build notification.send payload for non-incident dismissal (AR10: direct to notifications)."""
+    message = result.resolution_explanation
+    if not message:
+        logger.warning(
+            "Missing resolution_explanation for incident %s; falling back to reasoning (event_id=%s)",
+            state.incident_id,
+            state.event_id,
+        )
+        message = result.reasoning
+    if not message:
+        message = FALLBACK_NON_INCIDENT_MESSAGE
+    if result.confidence < CONFIDENCE_THRESHOLD:
+        message = f"{LOW_CONFIDENCE_CAVEAT}\n\n{message}"
+    return {
+        "type": "reporter_update",
+        "slack_user_id": state.incident.get("reporter_slack_user_id", ""),
+        "message": message,
+        "incident_id": state.incident_id,
+        "confidence": result.confidence,
+        "allow_reescalation": True,
+        "event_id": state.event_id,
+    }
+
+
 def _build_triage_completed_payload(state: TriageState, result: TriageResult, duration_ms: int) -> dict:
     """Build triage.completed event payload (metadata only — no raw user input per NFR5)."""
     classification = result.classification.value if hasattr(result.classification, "value") else str(result.classification)
@@ -176,7 +216,10 @@ class GenerateOutputNode(BaseNode[TriageState, TriageDeps, TriageResult]):
                 confidence=0.0,
                 reasoning="Classification failed — no result produced.",
                 severity_assessment="unknown — classification failed",
+                resolution_explanation=FALLBACK_CLASSIFICATION_FAILED_MESSAGE if state.source_type == "userIntegration" else None,
             )
+            if state.source_type == "userIntegration":
+                await self._publish_notification(ctx, fallback)
             await self._publish_triage_completed(ctx, fallback)
             return End(fallback)
 
@@ -205,11 +248,14 @@ class GenerateOutputNode(BaseNode[TriageState, TriageDeps, TriageResult]):
 
         if classification == "bug":
             await self._publish_ticket_create(ctx, result)
+        elif state.source_type == "userIntegration":
+            # Story 3.6: Non-incident dismissal — publish notification directly to notifications channel (AR10)
+            await self._publish_notification(ctx, result)
         else:
-            logger.info(
-                "Routing: NON-INCIDENT path for incident %s, source_type=%s (event_id=%s) — dismissal pending Story 3.6",
-                state.incident_id,
+            logger.warning(
+                "Non-incident with unexpected source_type=%s for incident %s (event_id=%s) — no notification sent",
                 state.source_type,
+                state.incident_id,
                 state.event_id,
             )
 
@@ -232,6 +278,29 @@ class GenerateOutputNode(BaseNode[TriageState, TriageDeps, TriageResult]):
         except Exception:
             logger.exception(
                 "Failed to publish ticket.create for incident %s (event_id=%s)",
+                state.incident_id,
+                state.event_id,
+            )
+
+    async def _publish_notification(self, ctx: GraphRunContext[TriageState], result: TriageResult) -> None:
+        """Publish notification.send directly to notifications channel (AR10: bypasses Ticket-Service)."""
+        state = ctx.state
+        payload = _build_notification_payload(state, result)
+        has_explanation = bool(result.resolution_explanation)
+        try:
+            event_id = await ctx.deps.publisher.publish("notifications", "notification.send", payload)
+            logger.info(
+                "Published notification.send for non-incident %s to notifications "
+                "(event_id=%s, published_event_id=%s, confidence=%.2f, has_explanation=%s)",
+                state.incident_id,
+                state.event_id,
+                event_id,
+                result.confidence,
+                has_explanation,
+            )
+        except Exception:
+            logger.exception(
+                "Failed to publish notification.send for incident %s (event_id=%s)",
                 state.incident_id,
                 state.event_id,
             )

@@ -10,3 +10,12 @@ Items identified during code reviews that are deferred for future stories or cro
 | 2 | No request size limit on webhook endpoint | webhook_listener.py | Nginx reverse proxy handles upstream body limits |
 | 3 | No rate limiting on webhook endpoint | webhook_listener.py | Nginx reverse proxy handles upstream rate limiting |
 | 4 | Handler exception crashes redis consumer loop | redis_consumer.py:52 | Pre-existing code not changed by this story; needs try/except in consumer loop |
+
+## Deferred from: code review of story-3.6 (2026-04-08)
+
+- **W1: Fallback + systemIntegration → no ticket.create published** — When `triage_result=None` for systemIntegration, fallback creates bug result but only publishes `triage.completed`, never `ticket.create`. Pre-existing from original fallback block design.
+- **W2: Empty slack_user_id propagated to notification payload** — `state.incident.get("reporter_slack_user_id", "")` defaults to empty string with no validation. Same pattern used in `_build_ticket_command`. Pre-existing from Story 3.4.
+- **W3: In-place mutation of state.triage_result.classification** — Story 3.5's forced-bug override mutates the TriageResult in place (`result.classification = Classification.bug`). Any post-graph audit of `state.triage_result` sees the overridden value, not the original LLM output. Pre-existing from Story 3.5.
+- **W4: description triple-backtick injection in _format_ticket_body** — User-supplied `description` field is fenced in backticks but the description itself is not sanitized, unlike `error_message` which strips triple backticks. Pre-existing from Story 3.4.
+- **W5: attachment_url markdown injection** — Raw URL is interpolated into markdown list item with no sanitization. Could enable link injection. Pre-existing.
+- **W6: Negative duration_ms if monotonic clock state is stale** — If `triage_started_at` exceeds current `time.monotonic()`, `duration_ms` becomes negative. No `max(0, ...)` guard. Pre-existing edge case.

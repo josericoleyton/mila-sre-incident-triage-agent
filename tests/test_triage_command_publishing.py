@@ -1178,3 +1178,742 @@ class TestReviewPatchEdgeCases:
         finally:
             mod.logger.removeHandler(handler)
             mod.logger.setLevel(orig_level)
+
+
+# ===========================================================================
+# Story 3.6: Non-Incident Dismissal with Reporter Notification
+# ===========================================================================
+
+
+# ---------------------------------------------------------------------------
+# _build_notification_payload tests
+# ---------------------------------------------------------------------------
+
+class TestBuildNotificationPayload:
+    def test_payload_structure(self):
+        mod = _load_generate_output()
+        state = _make_state()
+        result = _make_non_incident_result(
+            resolution_explanation="This is expected behavior during scheduled cache rebuild.",
+        )
+        payload = mod._build_notification_payload(state, result)
+
+        assert payload["type"] == "reporter_update"
+        assert payload["slack_user_id"] == "U99999"
+        assert payload["message"] == "This is expected behavior during scheduled cache rebuild."
+        assert payload["incident_id"] == state.incident_id
+        assert payload["confidence"] == 0.92
+        assert payload["allow_reescalation"] is True
+        assert payload["event_id"] == state.event_id
+
+    def test_uses_reasoning_when_no_resolution_explanation(self):
+        mod = _load_generate_output()
+        state = _make_state()
+        result = _make_non_incident_result(resolution_explanation=None)
+        payload = mod._build_notification_payload(state, result)
+
+        assert payload["message"] == result.reasoning
+
+    def test_uses_reasoning_when_resolution_explanation_empty(self):
+        mod = _load_generate_output()
+        state = _make_state()
+        result = _make_non_incident_result(resolution_explanation="")
+        payload = mod._build_notification_payload(state, result)
+
+        assert payload["message"] == result.reasoning
+
+    def test_low_confidence_caveat_prepended(self):
+        mod = _load_generate_output()
+        state = _make_state()
+        result = _make_non_incident_result(
+            confidence=0.5,
+            resolution_explanation="Looks like expected behavior.",
+        )
+        payload = mod._build_notification_payload(state, result)
+
+        assert payload["message"].startswith("I'm less certain about this classification.")
+        assert "please re-escalate" in payload["message"]
+        assert "Looks like expected behavior." in payload["message"]
+
+    def test_no_caveat_when_above_threshold(self):
+        mod = _load_generate_output()
+        state = _make_state()
+        result = _make_non_incident_result(
+            confidence=0.85,
+            resolution_explanation="Expected behavior.",
+        )
+        payload = mod._build_notification_payload(state, result)
+
+        assert not payload["message"].startswith("I'm less certain")
+        assert payload["message"] == "Expected behavior."
+
+    def test_no_caveat_when_exactly_at_threshold(self):
+        """At exactly the threshold, no caveat should be added."""
+        mod = _load_generate_output()
+        state = _make_state()
+        result = _make_non_incident_result(
+            confidence=0.75,  # equals default CONFIDENCE_THRESHOLD
+            resolution_explanation="Expected behavior.",
+        )
+        payload = mod._build_notification_payload(state, result)
+
+        assert not payload["message"].startswith("I'm less certain")
+
+    def test_allow_reescalation_always_true(self):
+        """allow_reescalation must ALWAYS be true for non-incidents."""
+        mod = _load_generate_output()
+        state = _make_state()
+        for conf in [0.3, 0.5, 0.75, 0.85, 0.99]:
+            result = _make_non_incident_result(confidence=conf)
+            payload = mod._build_notification_payload(state, result)
+            assert payload["allow_reescalation"] is True
+
+    def test_event_id_correlation(self):
+        """ER3: event_id must be included for correlation."""
+        mod = _load_generate_output()
+        state = _make_state(event_id="evt-correlation-123")
+        result = _make_non_incident_result()
+        payload = mod._build_notification_payload(state, result)
+
+        assert payload["event_id"] == "evt-correlation-123"
+
+
+# ---------------------------------------------------------------------------
+# GenerateOutputNode: non-incident + userIntegration → notification.send
+# ---------------------------------------------------------------------------
+
+class TestNonIncidentDismissalPath:
+    @pytest.mark.asyncio
+    async def test_publishes_notification_for_user_non_incident(self):
+        """AC: non-incident + userIntegration → notification.send to notifications channel."""
+        from pydantic_graph import End
+
+        publisher = AsyncMock()
+        publisher.publish.return_value = "evt-notif-1"
+
+        state = _make_state()  # userIntegration
+        state.triage_result = _make_non_incident_result(
+            resolution_explanation="Expected behavior during cache rebuild.",
+        )
+
+        ctx = _mock_ctx(state, publisher)
+        mod = _load_generate_output()
+        node = mod.GenerateOutputNode()
+        end_result = await node.run(ctx)
+
+        assert isinstance(end_result, End)
+        assert end_result.data.classification.value == "non_incident"
+
+        # Verify notification.send was published to notifications channel
+        calls = publisher.publish.call_args_list
+        notif_calls = [c for c in calls if c[0][0] == "notifications" and c[0][1] == "notification.send"]
+        assert len(notif_calls) == 1
+
+        payload = notif_calls[0][0][2]
+        assert payload["type"] == "reporter_update"
+        assert payload["slack_user_id"] == "U99999"
+        assert payload["message"] == "Expected behavior during cache rebuild."
+        assert payload["incident_id"] == state.incident_id
+        assert payload["allow_reescalation"] is True
+
+    @pytest.mark.asyncio
+    async def test_does_not_publish_ticket_for_user_non_incident(self):
+        """Non-incident userIntegration should NOT create a ticket."""
+        publisher = AsyncMock()
+        publisher.publish.return_value = "evt-notif-2"
+
+        state = _make_state()
+        state.triage_result = _make_non_incident_result()
+
+        ctx = _mock_ctx(state, publisher)
+        mod = _load_generate_output()
+        node = mod.GenerateOutputNode()
+        await node.run(ctx)
+
+        calls = publisher.publish.call_args_list
+        ticket_calls = [c for c in calls if c[0][0] == "ticket-commands"]
+        assert len(ticket_calls) == 0
+
+    @pytest.mark.asyncio
+    async def test_publishes_triage_completed_for_non_incident(self):
+        """triage.completed is always published, including for non-incidents."""
+        publisher = AsyncMock()
+        publisher.publish.return_value = "evt-notif-3"
+
+        state = _make_state()
+        state.triage_result = _make_non_incident_result()
+
+        ctx = _mock_ctx(state, publisher)
+        mod = _load_generate_output()
+        node = mod.GenerateOutputNode()
+        await node.run(ctx)
+
+        calls = publisher.publish.call_args_list
+        completed_calls = [c for c in calls if c[0][0] == "incidents" and c[0][1] == "triage.completed"]
+        assert len(completed_calls) == 1
+
+        payload = completed_calls[0][0][2]
+        assert payload["classification"] == "non_incident"
+        assert payload["incident_id"] == state.incident_id
+
+    @pytest.mark.asyncio
+    async def test_notification_published_before_triage_completed(self):
+        """AR10: notification.send to notifications channel happens, then triage.completed."""
+        publisher = AsyncMock()
+        publisher.publish.return_value = "evt-notif-order"
+
+        state = _make_state()
+        state.triage_result = _make_non_incident_result()
+
+        ctx = _mock_ctx(state, publisher)
+        mod = _load_generate_output()
+        node = mod.GenerateOutputNode()
+        await node.run(ctx)
+
+        calls = publisher.publish.call_args_list
+        channels = [c[0][0] for c in calls]
+        event_types = [c[0][1] for c in calls]
+
+        notif_idx = next(i for i, e in enumerate(event_types) if e == "notification.send")
+        completed_idx = next(i for i, e in enumerate(event_types) if e == "triage.completed")
+        assert notif_idx < completed_idx
+
+    @pytest.mark.asyncio
+    async def test_system_integration_non_incident_still_gets_ticket(self):
+        """AC: systemIntegration non-incident is forced to bug (Story 3.5), gets ticket NOT notification."""
+        publisher = AsyncMock()
+        publisher.publish.return_value = "evt-sys-notif"
+
+        state = _make_otel_state()
+        state.triage_result = _make_non_incident_result()
+
+        ctx = _mock_ctx(state, publisher)
+        mod = _load_generate_output()
+        node = mod.GenerateOutputNode()
+        end_result = await node.run(ctx)
+
+        # Classification forced to bug by Story 3.5
+        assert end_result.data.classification.value == "bug"
+
+        calls = publisher.publish.call_args_list
+        # Should have ticket.create, NOT notification.send
+        ticket_calls = [c for c in calls if c[0][0] == "ticket-commands"]
+        notif_calls = [c for c in calls if c[0][0] == "notifications"]
+        assert len(ticket_calls) == 1
+        assert len(notif_calls) == 0
+
+    @pytest.mark.asyncio
+    async def test_low_confidence_caveat_in_notification(self):
+        """AC: low confidence adds caveat to message."""
+        publisher = AsyncMock()
+        publisher.publish.return_value = "evt-low-conf"
+
+        state = _make_state()
+        state.triage_result = _make_non_incident_result(
+            confidence=0.5,
+            resolution_explanation="Looks normal.",
+        )
+
+        ctx = _mock_ctx(state, publisher)
+        mod = _load_generate_output()
+        node = mod.GenerateOutputNode()
+        await node.run(ctx)
+
+        calls = publisher.publish.call_args_list
+        notif_calls = [c for c in calls if c[0][1] == "notification.send"]
+        assert len(notif_calls) == 1
+
+        payload = notif_calls[0][0][2]
+        assert "I'm less certain about this classification" in payload["message"]
+        assert "please re-escalate" in payload["message"]
+        assert "Looks normal." in payload["message"]
+        assert payload["allow_reescalation"] is True
+
+    @pytest.mark.asyncio
+    async def test_high_confidence_no_caveat_in_notification(self):
+        """High confidence non-incident should NOT have caveat."""
+        publisher = AsyncMock()
+        publisher.publish.return_value = "evt-high-conf"
+
+        state = _make_state()
+        state.triage_result = _make_non_incident_result(
+            confidence=0.92,
+            resolution_explanation="Expected behavior.",
+        )
+
+        ctx = _mock_ctx(state, publisher)
+        mod = _load_generate_output()
+        node = mod.GenerateOutputNode()
+        await node.run(ctx)
+
+        calls = publisher.publish.call_args_list
+        notif_calls = [c for c in calls if c[0][1] == "notification.send"]
+        payload = notif_calls[0][0][2]
+        assert payload["message"] == "Expected behavior."
+        assert "less certain" not in payload["message"]
+
+    @pytest.mark.asyncio
+    async def test_confidence_included_in_notification(self):
+        """Confidence value must be in notification payload."""
+        publisher = AsyncMock()
+        publisher.publish.return_value = "evt-conf-val"
+
+        state = _make_state()
+        state.triage_result = _make_non_incident_result(confidence=0.88)
+
+        ctx = _mock_ctx(state, publisher)
+        mod = _load_generate_output()
+        node = mod.GenerateOutputNode()
+        await node.run(ctx)
+
+        calls = publisher.publish.call_args_list
+        notif_calls = [c for c in calls if c[0][1] == "notification.send"]
+        payload = notif_calls[0][0][2]
+        assert payload["confidence"] == 0.88
+
+
+# ---------------------------------------------------------------------------
+# Non-incident notification: error resilience
+# ---------------------------------------------------------------------------
+
+class TestNonIncidentNotificationResilience:
+    @pytest.mark.asyncio
+    async def test_notification_failure_doesnt_crash(self):
+        """Publisher failure on notification.send should not crash the pipeline."""
+        from pydantic_graph import End
+
+        publisher = AsyncMock()
+        # notification.send fails, triage.completed succeeds
+        publisher.publish.side_effect = [
+            Exception("Redis connection lost"),  # notification.send
+            "evt-ok",  # triage.completed
+        ]
+
+        state = _make_state()
+        state.triage_result = _make_non_incident_result()
+
+        ctx = _mock_ctx(state, publisher)
+        mod = _load_generate_output()
+        node = mod.GenerateOutputNode()
+        end_result = await node.run(ctx)
+
+        assert isinstance(end_result, End)
+        assert end_result.data.classification.value == "non_incident"
+
+    @pytest.mark.asyncio
+    async def test_notification_failure_still_publishes_triage_completed(self):
+        """Even if notification.send fails, triage.completed should still be published."""
+        publisher = AsyncMock()
+        publisher.publish.side_effect = [
+            Exception("Redis timeout"),  # notification.send
+            "evt-completed",  # triage.completed
+        ]
+
+        state = _make_state()
+        state.triage_result = _make_non_incident_result()
+
+        ctx = _mock_ctx(state, publisher)
+        mod = _load_generate_output()
+        node = mod.GenerateOutputNode()
+        await node.run(ctx)
+
+        # Even though notification failed, publisher was called twice
+        assert publisher.publish.call_count == 2
+
+
+# ---------------------------------------------------------------------------
+# Non-incident triage.completed payload specifics
+# ---------------------------------------------------------------------------
+
+class TestNonIncidentTriageCompleted:
+    @pytest.mark.asyncio
+    async def test_triage_completed_has_non_incident_classification(self):
+        publisher = AsyncMock()
+        publisher.publish.return_value = "evt-tc-ni"
+
+        state = _make_state()
+        state.triage_result = _make_non_incident_result()
+
+        ctx = _mock_ctx(state, publisher)
+        mod = _load_generate_output()
+        node = mod.GenerateOutputNode()
+        await node.run(ctx)
+
+        calls = publisher.publish.call_args_list
+        completed_calls = [c for c in calls if c[0][1] == "triage.completed"]
+        payload = completed_calls[0][0][2]
+
+        assert payload["classification"] == "non_incident"
+        assert payload["forced_escalation"] is False
+        assert payload["source_type"] == "userIntegration"
+
+    @pytest.mark.asyncio
+    async def test_triage_completed_duration_tracked(self):
+        publisher = AsyncMock()
+        publisher.publish.return_value = "evt-tc-dur"
+
+        state = _make_state()
+        state.triage_started_at = time.monotonic() - 1.5  # 1.5 seconds ago
+        state.triage_result = _make_non_incident_result()
+
+        ctx = _mock_ctx(state, publisher)
+        mod = _load_generate_output()
+        node = mod.GenerateOutputNode()
+        await node.run(ctx)
+
+        calls = publisher.publish.call_args_list
+        completed_calls = [c for c in calls if c[0][1] == "triage.completed"]
+        payload = completed_calls[0][0][2]
+
+        assert payload["duration_ms"] >= 1400
+        assert payload["duration_ms"] < 5000
+
+
+# ---------------------------------------------------------------------------
+# NFR5: metadata-only logging for notifications
+# ---------------------------------------------------------------------------
+
+class TestNonIncidentNFR5Compliance:
+    @pytest.mark.asyncio
+    async def test_notification_logs_metadata_not_raw_text(self):
+        """NFR5: logs should contain metadata (confidence, has_explanation) not raw incident text."""
+        import io
+        import logging
+
+        publisher = AsyncMock()
+        publisher.publish.return_value = "evt-nfr5"
+
+        state = _make_state()
+        state.triage_result = _make_non_incident_result(
+            resolution_explanation="Detailed explanation with sensitive info about user's error",
+        )
+
+        ctx = _mock_ctx(state, publisher)
+        mod = _load_generate_output()
+        node = mod.GenerateOutputNode()
+
+        log_capture = io.StringIO()
+        handler = logging.StreamHandler(log_capture)
+        handler.setLevel(logging.INFO)
+        mod.logger.addHandler(handler)
+        orig_level = mod.logger.level
+        mod.logger.setLevel(logging.INFO)
+        try:
+            await node.run(ctx)
+            log_output = log_capture.getvalue()
+            # Logs should mention metadata fields, not raw explanation text
+            assert "has_explanation=True" in log_output
+            assert "confidence=" in log_output
+            # Should NOT contain the raw resolution text
+            assert "sensitive info about user's error" not in log_output
+        finally:
+            mod.logger.removeHandler(handler)
+            mod.logger.setLevel(orig_level)
+
+
+# ===========================================================================
+# Story 3.6 Review Fixes
+# ===========================================================================
+
+
+# ---------------------------------------------------------------------------
+# D2: Fallback path sends notification for userIntegration
+# ---------------------------------------------------------------------------
+
+class TestFallbackNotification:
+    @pytest.mark.asyncio
+    async def test_fallback_user_integration_publishes_notification(self):
+        """D2: When LLM fails (triage_result=None) + userIntegration, reporter gets notification."""
+        publisher = AsyncMock()
+        publisher.publish.return_value = "evt-fallback-notif"
+
+        state = _make_state()  # userIntegration
+        state.triage_result = None
+
+        ctx = _mock_ctx(state, publisher)
+        mod = _load_generate_output()
+        node = mod.GenerateOutputNode()
+        await node.run(ctx)
+
+        calls = publisher.publish.call_args_list
+        notif_calls = [c for c in calls if c[0][0] == "notifications" and c[0][1] == "notification.send"]
+        assert len(notif_calls) == 1
+
+        payload = notif_calls[0][0][2]
+        assert payload["type"] == "reporter_update"
+        assert "couldn't fully analyze" in payload["message"]
+        assert payload["allow_reescalation"] is True
+        assert payload["confidence"] == 0.0
+
+    @pytest.mark.asyncio
+    async def test_fallback_user_integration_has_generic_message(self):
+        """D2: Fallback notification uses the generic classification-failed message."""
+        publisher = AsyncMock()
+        publisher.publish.return_value = "evt-fallback-msg"
+
+        state = _make_state()
+        state.triage_result = None
+
+        ctx = _mock_ctx(state, publisher)
+        mod = _load_generate_output()
+        node = mod.GenerateOutputNode()
+        end_result = await node.run(ctx)
+
+        # Fallback TriageResult should have the generic resolution_explanation
+        assert "couldn't fully analyze" in end_result.data.resolution_explanation
+
+    @pytest.mark.asyncio
+    async def test_fallback_system_integration_no_notification(self):
+        """D2: systemIntegration fallback should NOT publish notification."""
+        publisher = AsyncMock()
+        publisher.publish.return_value = "evt-fallback-sys"
+
+        state = _make_otel_state()
+        state.triage_result = None
+
+        ctx = _mock_ctx(state, publisher)
+        mod = _load_generate_output()
+        node = mod.GenerateOutputNode()
+        await node.run(ctx)
+
+        calls = publisher.publish.call_args_list
+        notif_calls = [c for c in calls if c[0][0] == "notifications"]
+        assert len(notif_calls) == 0
+
+    @pytest.mark.asyncio
+    async def test_fallback_notification_before_triage_completed(self):
+        """D2: Fallback notification should be published before triage.completed."""
+        publisher = AsyncMock()
+        publisher.publish.return_value = "evt-fallback-ord"
+
+        state = _make_state()
+        state.triage_result = None
+
+        ctx = _mock_ctx(state, publisher)
+        mod = _load_generate_output()
+        node = mod.GenerateOutputNode()
+        await node.run(ctx)
+
+        calls = publisher.publish.call_args_list
+        event_types = [c[0][1] for c in calls]
+
+        notif_idx = next(i for i, e in enumerate(event_types) if e == "notification.send")
+        completed_idx = next(i for i, e in enumerate(event_types) if e == "triage.completed")
+        assert notif_idx < completed_idx
+
+    @pytest.mark.asyncio
+    async def test_fallback_notification_has_low_confidence_caveat(self):
+        """D2: Fallback has confidence=0.0,  below threshold, so caveat should be prepended."""
+        publisher = AsyncMock()
+        publisher.publish.return_value = "evt-fallback-caveat"
+
+        state = _make_state()
+        state.triage_result = None
+
+        ctx = _mock_ctx(state, publisher)
+        mod = _load_generate_output()
+        node = mod.GenerateOutputNode()
+        await node.run(ctx)
+
+        calls = publisher.publish.call_args_list
+        notif_calls = [c for c in calls if c[0][1] == "notification.send"]
+        payload = notif_calls[0][0][2]
+        assert payload["message"].startswith("I'm less certain about this classification.")
+        assert "couldn't fully analyze" in payload["message"]
+
+
+# ---------------------------------------------------------------------------
+# D3: Reasoning fallback logs warning
+# ---------------------------------------------------------------------------
+
+class TestReasoningFallbackWarning:
+    def test_logs_warning_when_using_reasoning_fallback(self):
+        """D3: When resolution_explanation is missing, a warning should be logged."""
+        import io
+        import logging
+
+        mod = _load_generate_output()
+        state = _make_state()
+        result = _make_non_incident_result(resolution_explanation=None)
+
+        log_capture = io.StringIO()
+        handler = logging.StreamHandler(log_capture)
+        handler.setLevel(logging.WARNING)
+        mod.logger.addHandler(handler)
+        orig_level = mod.logger.level
+        mod.logger.setLevel(logging.WARNING)
+        try:
+            mod._build_notification_payload(state, result)
+            log_output = log_capture.getvalue()
+            assert "Missing resolution_explanation" in log_output
+            assert "falling back to reasoning" in log_output
+        finally:
+            mod.logger.removeHandler(handler)
+            mod.logger.setLevel(orig_level)
+
+    def test_no_warning_when_resolution_explanation_present(self):
+        """D3: No warning when resolution_explanation is present."""
+        import io
+        import logging
+
+        mod = _load_generate_output()
+        state = _make_state()
+        result = _make_non_incident_result(
+            resolution_explanation="This is expected behavior.",
+        )
+
+        log_capture = io.StringIO()
+        handler = logging.StreamHandler(log_capture)
+        handler.setLevel(logging.WARNING)
+        mod.logger.addHandler(handler)
+        orig_level = mod.logger.level
+        mod.logger.setLevel(logging.WARNING)
+        try:
+            mod._build_notification_payload(state, result)
+            log_output = log_capture.getvalue()
+            assert "Missing resolution_explanation" not in log_output
+        finally:
+            mod.logger.removeHandler(handler)
+            mod.logger.setLevel(orig_level)
+
+
+# ---------------------------------------------------------------------------
+# P1: Empty message guard
+# ---------------------------------------------------------------------------
+
+class TestEmptyMessageGuard:
+    def test_fallback_message_when_both_fields_empty(self):
+        """P1: When both resolution_explanation and reasoning are empty, use fallback message."""
+        mod = _load_generate_output()
+        state = _make_state()
+        result = _make_non_incident_result(
+            resolution_explanation="",
+            reasoning="",
+            confidence=0.92,
+        )
+        payload = mod._build_notification_payload(state, result)
+
+        assert "not an incident" in payload["message"]
+        assert "re-escalate" in payload["message"]
+
+    def test_fallback_message_when_both_fields_none(self):
+        """P1: When both resolution_explanation and reasoning are None."""
+        mod = _load_generate_output()
+        state = _make_state()
+        result = _make_non_incident_result(
+            resolution_explanation=None,
+            confidence=0.92,
+        )
+        # Force reasoning to empty string
+        result.reasoning = ""
+        payload = mod._build_notification_payload(state, result)
+
+        assert "not an incident" in payload["message"]
+        assert "re-escalate" in payload["message"]
+
+    def test_fallback_message_with_low_confidence_gets_caveat(self):
+        """P1: Fallback message + low confidence = caveat prepended to fallback."""
+        mod = _load_generate_output()
+        state = _make_state()
+        result = _make_non_incident_result(
+            resolution_explanation="",
+            reasoning="",
+            confidence=0.3,
+        )
+        payload = mod._build_notification_payload(state, result)
+
+        assert payload["message"].startswith("I'm less certain")
+        assert "not an incident" in payload["message"]
+
+
+# ---------------------------------------------------------------------------
+# P2: Explicit source_type guard — unknown source_type
+# ---------------------------------------------------------------------------
+
+class TestUnknownSourceTypeGuard:
+    @pytest.mark.asyncio
+    async def test_unknown_source_type_no_notification(self):
+        """P2: Unknown source_type + non-incident should NOT publish notification."""
+        publisher = AsyncMock()
+        publisher.publish.return_value = "evt-unk-src"
+
+        m = _load_models()
+        state = m.TriageState(
+            incident_id="inc-unknown",
+            source_type="unknownIntegration",
+            event_id="evt-unknown",
+            incident={"reporter_slack_user_id": ""},
+            triage_started_at=time.monotonic(),
+        )
+        state.triage_result = _make_non_incident_result()
+
+        ctx = _mock_ctx(state, publisher)
+        mod = _load_generate_output()
+        node = mod.GenerateOutputNode()
+        await node.run(ctx)
+
+        calls = publisher.publish.call_args_list
+        notif_calls = [c for c in calls if c[0][0] == "notifications"]
+        assert len(notif_calls) == 0
+
+    @pytest.mark.asyncio
+    async def test_unknown_source_type_logs_warning(self):
+        """P2: Unknown source_type should produce a warning log."""
+        import io
+        import logging
+
+        publisher = AsyncMock()
+        publisher.publish.return_value = "evt-unk-warn"
+
+        m = _load_models()
+        state = m.TriageState(
+            incident_id="inc-unknown",
+            source_type="unknownIntegration",
+            event_id="evt-unknown",
+            incident={"reporter_slack_user_id": ""},
+            triage_started_at=time.monotonic(),
+        )
+        state.triage_result = _make_non_incident_result()
+
+        ctx = _mock_ctx(state, publisher)
+        mod = _load_generate_output()
+        node = mod.GenerateOutputNode()
+
+        log_capture = io.StringIO()
+        handler = logging.StreamHandler(log_capture)
+        handler.setLevel(logging.WARNING)
+        mod.logger.addHandler(handler)
+        orig_level = mod.logger.level
+        mod.logger.setLevel(logging.WARNING)
+        try:
+            await node.run(ctx)
+            log_output = log_capture.getvalue()
+            assert "unexpected source_type=unknownIntegration" in log_output
+        finally:
+            mod.logger.removeHandler(handler)
+            mod.logger.setLevel(orig_level)
+
+    @pytest.mark.asyncio
+    async def test_unknown_source_type_still_publishes_triage_completed(self):
+        """P2: Even unknown source_type should still get triage.completed."""
+        publisher = AsyncMock()
+        publisher.publish.return_value = "evt-unk-tc"
+
+        m = _load_models()
+        state = m.TriageState(
+            incident_id="inc-unknown",
+            source_type="unknownIntegration",
+            event_id="evt-unknown",
+            incident={"reporter_slack_user_id": ""},
+            triage_started_at=time.monotonic(),
+        )
+        state.triage_result = _make_non_incident_result()
+
+        ctx = _mock_ctx(state, publisher)
+        mod = _load_generate_output()
+        node = mod.GenerateOutputNode()
+        await node.run(ctx)
+
+        calls = publisher.publish.call_args_list
+        completed_calls = [c for c in calls if c[0][1] == "triage.completed"]
+        assert len(completed_calls) == 1

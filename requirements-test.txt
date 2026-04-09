@@ -5,3 +5,4 @@ redis[hiredis]
 httpx
 pydantic
 fastapi
+slack-sdk

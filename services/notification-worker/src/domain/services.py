@@ -2,19 +2,99 @@ import logging
 
 from pydantic import ValidationError
 
+from src.adapters.outbound.slack_client import SlackClient
 from src.domain.models import Notification, NotificationType
 
 logger = logging.getLogger(__name__)
 
+_SEVERITY_EMOJI = {
+    "critical": "🔴 [P1]",
+    "high": "🟠 [P2]",
+    "medium": "🟡 [P3]",
+    "low": "🔵 [P4]",
+}
+
+_slack_client = SlackClient()
+
+
+def _build_source_label(source_type: str | None) -> str:
+    if source_type == "proactive":
+        return "🤖 Proactive OTEL detection"
+    return "👤 User-reported"
+
+
+def build_team_alert_blocks(notification: Notification) -> list[dict]:
+    severity_label = _SEVERITY_EMOJI.get(notification.severity or "", "⚪")
+    title = notification.title or notification.incident_id
+    source_label = _build_source_label(notification.source_type)
+    confidence = notification.confidence if notification.confidence is not None else "N/A"
+
+    blocks: list[dict] = [
+        {
+            "type": "header",
+            "text": {
+                "type": "plain_text",
+                "text": f"{severity_label} {title}",
+            },
+        },
+        {
+            "type": "section",
+            "fields": [
+                {"type": "mrkdwn", "text": f"*Component:* {notification.component or 'Unknown'}"},
+                {"type": "mrkdwn", "text": f"*Confidence:* {confidence}"},
+                {"type": "mrkdwn", "text": f"*Source:* {source_label}"},
+            ],
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"*Root Cause:* {notification.summary or 'No summary available'}",
+            },
+        },
+    ]
+
+    if notification.ticket_url:
+        blocks.append(
+            {
+                "type": "actions",
+                "elements": [
+                    {
+                        "type": "button",
+                        "text": {"type": "plain_text", "text": "View Ticket"},
+                        "url": notification.ticket_url,
+                    }
+                ],
+            }
+        )
+
+    return blocks
+
 
 async def handle_team_alert(notification: Notification, event_id: str) -> None:
-    """Stub: Story 5.2 implements Slack channel message."""
     logger.info(
-        "Notification type=%s for incident=%s — handler not yet implemented (event_id=%s)",
-        notification.type.value,
+        "Building team alert for incident=%s (event_id=%s)",
         notification.incident_id,
         event_id,
     )
+    blocks = build_team_alert_blocks(notification)
+    severity_label = _SEVERITY_EMOJI.get(notification.severity or "", "⚪")
+    title = notification.title or notification.incident_id
+    fallback_text = f"{severity_label} {title}"
+
+    success = await _slack_client.send_team_alert(blocks, fallback_text, event_id=event_id)
+    if success:
+        logger.info(
+            "Team alert sent for incident=%s (event_id=%s)",
+            notification.incident_id,
+            event_id,
+        )
+    else:
+        logger.error(
+            "Failed to send team alert for incident=%s (event_id=%s)",
+            notification.incident_id,
+            event_id,
+        )
 
 
 async def handle_reporter_update(notification: Notification, event_id: str) -> None:

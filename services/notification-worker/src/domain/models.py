@@ -17,10 +17,12 @@ class Notification(BaseModel):
     slack_channel: Optional[str] = None
     slack_user_id: Optional[str] = None
     # team_alert fields
+    title: Optional[str] = None
     ticket_url: Optional[str] = None
     severity: Optional[str] = None
     component: Optional[str] = None
     summary: Optional[str] = None
+    source_type: Optional[str] = None
     reporter_slack_user_id: Optional[str] = None
     metadata: dict = {}
     confidence: Optional[float] = None

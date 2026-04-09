@@ -581,9 +581,16 @@ class TestSystemPrompt:
 
     def test_contains_eshop_context(self):
         prompts = _load_prompts()
+        # eShop is still referenced in the Mila role line of the system prompt
         assert "eShop" in prompts.TRIAGE_SYSTEM_PROMPT
-        assert "Catalog.API" in prompts.TRIAGE_SYSTEM_PROMPT
-        assert "Ordering.API" in prompts.TRIAGE_SYSTEM_PROMPT
+        # Service-level details now live in the context document, not the system prompt
+        ctx_loader = _load_module(
+            "agent_ctx_loader_33",
+            "services/agent/src/domain/context/context_loader.py",
+        )
+        context = ctx_loader.load_eshop_context()
+        assert "Catalog.API" in context
+        assert "Ordering.API" in context
 
     def test_contains_classification_criteria(self):
         prompts = _load_prompts()

@@ -49,8 +49,9 @@ services:
     image: otel/opentelemetry-collector-contrib:latest
     volumes:
       - ./infra/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
+    ports:
+      - "4317:4317"
     expose:
-      - "4317"
       - "4318"
     depends_on:
       api:

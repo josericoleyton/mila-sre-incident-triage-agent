@@ -166,7 +166,7 @@ def _mock_mapping_store(
 def _default_mapping() -> dict:
     return {
         "incident_id": "inc-200",
-        "reporter_slack_user_id": "U12345",
+        "reporter_email": "user@example.com",
         "identifier": "ENG-42",
         "url": "https://linear.app/team/issue/ENG-42",
     }
@@ -300,7 +300,7 @@ class TestReporterResolvedNotification:
         )
         mapping = {
             "incident_id": "inc-200",
-            "reporter_slack_user_id": "U12345",
+            "reporter_email": "user@example.com",
             "identifier": "ENG-42",
             "url": "https://linear.app/team/issue/ENG-42",
         }
@@ -318,7 +318,7 @@ class TestReporterResolvedNotification:
 
         notification_payload = call_args[2]
         assert notification_payload["type"] == "reporter_resolved"
-        assert notification_payload["slack_user_id"] == "U12345"
+        assert notification_payload["reporter_email"] == "user@example.com"
         assert notification_payload["incident_id"] == "inc-200"
         assert notification_payload["ticket_url"] == "https://linear.app/team/issue/ENG-42"
         assert "[P2] NullRef in OrderController" in notification_payload["message"]
@@ -330,7 +330,7 @@ class TestReporterResolvedNotification:
         payload = _resolution_webhook_payload()
         mapping = {
             "incident_id": "inc-300",
-            "reporter_slack_user_id": None,
+            "reporter_email": None,
             "identifier": "ENG-50",
             "url": "https://linear.app/team/issue/ENG-50",
         }
@@ -564,11 +564,11 @@ class TestEdgeCases:
 
     @pytest.mark.asyncio
     async def test_empty_reporter_string_treated_as_no_reporter(self):
-        """If reporter_slack_user_id is empty string, treat as no reporter."""
+        """If reporter_email is empty string, treat as no reporter."""
         payload = _resolution_webhook_payload()
         mapping = {
             "incident_id": "inc-400",
-            "reporter_slack_user_id": "",
+            "reporter_email": "",
             "identifier": "ENG-60",
             "url": "https://linear.app/team/issue/ENG-60",
         }

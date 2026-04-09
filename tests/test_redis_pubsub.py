@@ -119,7 +119,7 @@ class TestApiDomainModels:
         m = _load_models("api")
         report = m.IncidentReport(
             title="Login broken",
-            reporter_slack_user_id="U123",
+            reporter_email="user123@example.com",
             source_type="userIntegration",
         )
         assert report.title == "Login broken"
@@ -131,7 +131,7 @@ class TestApiDomainModels:
         with pytest.raises(Exception):
             m.IncidentReport(
                 title="x",
-                reporter_slack_user_id="U123",
+                reporter_email="user123@example.com",
                 source_type="invalid",
             )
 
@@ -140,7 +140,7 @@ class TestApiDomainModels:
         event = m.IncidentEvent(
             incident_id="inc-1",
             title="Error 500",
-            reporter_slack_user_id="U1",
+            reporter_email="user1@example.com",
             source_type="systemIntegration",
         )
         assert event.incident_id == "inc-1"
@@ -190,7 +190,7 @@ class TestTicketServiceDomainModels:
             new_status="closed",
             incident_id="inc-1",
         )
-        assert evt.reporter_slack_user_id is None
+        assert evt.reporter_email is None
 
 
 class TestNotificationWorkerDomainModels:

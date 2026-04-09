@@ -207,6 +207,14 @@
           </div>
 
           <div class="form-section">
+            <p class="section-label">Reporter</p>
+            <div class="field">
+              <span class="flabel">Email</span>
+              <input type="email" id="f-email" placeholder="ana.botero@company.com" oninput="updateProgress()"/>
+            </div>
+          </div>
+
+          <div class="form-section">
             <p class="section-label">Evidence <span class="optional-tag">optional</span></p>
             <div class="upload-zone" onclick="document.getElementById('fi').click()">
               <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#3B5BDB" stroke-width="1.5" style="margin:0 auto 8px;display:block;opacity:0.3;">
@@ -355,6 +363,7 @@ async function submitForm() {
   formData.append('description', document.getElementById('f-desc').value);
   formData.append('component', document.getElementById('f-comp').value || '');
   formData.append('severity', selectedSeverity);
+  formData.append('reporter_email', document.getElementById('f-email').value.trim());
   var fileInput = document.getElementById('fi');
   if (fileInput.files && fileInput.files[0]) {
     formData.append('file', fileInput.files[0]);

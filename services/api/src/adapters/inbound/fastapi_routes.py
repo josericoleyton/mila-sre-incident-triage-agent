@@ -10,7 +10,6 @@ from fastapi.responses import JSONResponse
 
 from src.adapters.inbound.middleware import check_injection, sanitize_text
 from src.adapters.outbound.redis_publisher import RedisPublisher
-from src.config import SLACK_REPORTER_USER_ID
 from src.domain.services import ValidationError, validate_incident
 
 logger = logging.getLogger(__name__)
@@ -52,6 +51,7 @@ async def create_incident(
     description: Optional[str] = Form(None),
     component: Optional[str] = Form(None),
     severity: Optional[str] = Form(None),
+    reporter_email: Optional[str] = Form(None),
     file: Optional[UploadFile] = File(None),
 ):
     # --- sanitization (before validation, so stripped text is what gets validated) ---
@@ -104,7 +104,7 @@ async def create_incident(
         "component": component,
         "severity": severity,
         "attachment_url": attachment_url,
-        "reporter_slack_user_id": SLACK_REPORTER_USER_ID or None,
+        "reporter_email": reporter_email or None,
         "source_type": "userIntegration",
         "prompt_injection_detected": prompt_injection_detected,
     }
@@ -157,7 +157,7 @@ async def _handle_simple_otel(body: dict) -> dict | JSONResponse:
         "component": body.get("service_name"),
         "severity": None,
         "attachment_url": None,
-        "reporter_slack_user_id": None,
+        "reporter_email": None,
         "source_type": "systemIntegration",
         "trace_data": {
             "trace_id": body.get("trace_id"),
@@ -220,7 +220,7 @@ async def _handle_otlp_traces(body: dict) -> dict | JSONResponse:
                     "component": service_name,
                     "severity": None,
                     "attachment_url": None,
-                    "reporter_slack_user_id": None,
+                    "reporter_email": None,
                     "source_type": "systemIntegration",
                     "trace_data": {
                         "trace_id": trace_id,

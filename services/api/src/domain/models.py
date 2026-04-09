@@ -9,7 +9,7 @@ class IncidentReport(BaseModel):
     component: Optional[str] = None
     severity: Optional[str] = None
     attachment_url: Optional[str] = None
-    reporter_slack_user_id: str
+    reporter_email: Optional[str] = None
     source_type: Literal["userIntegration", "systemIntegration"]
 
 
@@ -20,6 +20,6 @@ class IncidentEvent(BaseModel):
     component: Optional[str] = None
     severity: Optional[str] = None
     attachment_url: Optional[str] = None
-    reporter_slack_user_id: str
+    reporter_email: Optional[str] = None
     source_type: Literal["userIntegration", "systemIntegration"]
     trace_data: Optional[dict] = None

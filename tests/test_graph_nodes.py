@@ -67,7 +67,7 @@ def _valid_incident(**overrides) -> dict:
         "description": "Users report 500 errors when searching products. Stack trace: System.NullReferenceException at Catalog.API.Controllers.CatalogController.Search()",
         "component": "Catalog.API",
         "severity": "high",
-        "reporter_slack_user_id": "U12345",
+        "reporter_email": "user@example.com",
         "source_type": "userIntegration",
     }
     base.update(overrides)

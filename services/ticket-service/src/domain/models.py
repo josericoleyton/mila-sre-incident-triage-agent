@@ -9,7 +9,7 @@ class TicketCommand(BaseModel):
     body: str
     severity: str
     labels: list[str] = []
-    reporter_slack_user_id: Optional[str] = None
+    reporter_email: Optional[str] = None
     incident_id: str
 
 
@@ -25,4 +25,4 @@ class TicketStatusEvent(BaseModel):
     old_status: str
     new_status: str
     incident_id: str
-    reporter_slack_user_id: Optional[str] = None
+    reporter_email: Optional[str] = None

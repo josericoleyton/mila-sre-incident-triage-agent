@@ -8,7 +8,7 @@ class TicketMappingStore(ABC):
         self,
         linear_ticket_id: str,
         incident_id: str,
-        reporter_slack_user_id: Optional[str],
+        reporter_email: Optional[str],
         identifier: str,
         url: str,
     ) -> None:

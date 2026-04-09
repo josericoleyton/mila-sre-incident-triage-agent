@@ -141,7 +141,7 @@ def _valid_ticket_command_payload(**overrides) -> dict:
         "body": "Payment service returning 504 errors since 14:00 UTC",
         "severity": "critical",
         "labels": ["payments", "p0"],
-        "reporter_slack_user_id": "U12345",
+        "reporter_email": "user@example.com",
         "incident_id": "inc-100",
     }
     base.update(overrides)
@@ -162,10 +162,10 @@ class TestTicketCommandModel:
     def test_optional_fields_default(self):
         payload = _valid_ticket_command_payload()
         payload.pop("labels")
-        payload.pop("reporter_slack_user_id")
+        payload.pop("reporter_email")
         cmd = TicketCommand(**payload)
         assert cmd.labels == []
-        assert cmd.reporter_slack_user_id is None
+        assert cmd.reporter_email is None
 
     def test_missing_required_field_raises(self):
         payload = _valid_ticket_command_payload()
@@ -183,7 +183,7 @@ class TestTicketStatusEventModel:
             incident_id="inc-100",
         )
         assert evt.ticket_id == "LIN-42"
-        assert evt.reporter_slack_user_id is None
+        assert evt.reporter_email is None
 
 
 # ---------------------------------------------------------------------------

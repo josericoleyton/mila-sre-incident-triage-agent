@@ -144,7 +144,7 @@ def _team_alert_payload(**overrides) -> dict:
         "component": "payments",
         "summary": "Payment gateway timeout",
         "incident_id": "inc-100",
-        "reporter_slack_user_id": "U12345",
+        "reporter_email": "user@example.com",
     }
     base.update(overrides)
     return base
@@ -153,7 +153,7 @@ def _team_alert_payload(**overrides) -> dict:
 def _reporter_update_payload(**overrides) -> dict:
     base = {
         "type": "reporter_update",
-        "slack_user_id": "U12345",
+        "reporter_email": "user@example.com",
         "message": "Your incident has been escalated to engineering.",
         "incident_id": "inc-100",
     }
@@ -164,7 +164,7 @@ def _reporter_update_payload(**overrides) -> dict:
 def _reporter_resolved_payload(**overrides) -> dict:
     base = {
         "type": "reporter_resolved",
-        "slack_user_id": "U12345",
+        "reporter_email": "user@example.com",
         "message": "The bug you reported has been fixed.",
         "incident_id": "inc-100",
     }
@@ -187,7 +187,7 @@ class TestNotificationModel:
     def test_reporter_update_parses(self):
         n = Notification(**_reporter_update_payload())
         assert n.type == NotificationType.reporter_update
-        assert n.slack_user_id == "U12345"
+        assert n.reporter_email == "user@example.com"
         assert n.message == "Your incident has been escalated to engineering."
 
     def test_reporter_resolved_parses(self):
@@ -199,7 +199,7 @@ class TestNotificationModel:
         n = Notification(type="team_alert", incident_id="inc-1")
         assert n.message is None
         assert n.slack_channel is None
-        assert n.slack_user_id is None
+        assert n.reporter_email is None
         assert n.ticket_url is None
         assert n.metadata == {}
 

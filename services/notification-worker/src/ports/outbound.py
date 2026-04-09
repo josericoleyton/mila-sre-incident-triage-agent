@@ -18,6 +18,6 @@ class TeamNotifier(ABC):
 
 class ReporterNotifier(ABC):
     @abstractmethod
-    async def send_dm(self, blocks: list[dict], fallback_text: str, event_id: str = "unknown") -> bool:
-        """Post a DM to the reporter via webhook. Returns True on success."""
+    async def send_dm(self, reporter_email: str, blocks: list[dict], fallback_text: str, event_id: str = "unknown") -> bool:
+        """Send a DM to the reporter by email via Slack Bot Token. Returns True on success."""
         ...

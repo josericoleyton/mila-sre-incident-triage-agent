@@ -81,7 +81,7 @@ def _valid_incident_payload(**overrides) -> dict:
         "description": "Users report 500 on /login",
         "component": "auth-service",
         "severity": "high",
-        "reporter_slack_user_id": "U12345",
+        "reporter_email": "user@example.com",
         "source_type": "userIntegration",
     }
     base.update(overrides)
@@ -125,7 +125,7 @@ class TestIncidentEventModel:
         evt = m.IncidentEvent(
             incident_id="inc-002",
             title="Test",
-            reporter_slack_user_id="U1",
+            reporter_email="user1@example.com",
             source_type="userIntegration",
         )
         assert evt.description is None

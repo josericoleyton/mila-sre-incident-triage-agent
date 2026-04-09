@@ -6,8 +6,8 @@ Covers:
 - Domain services: create_engineering_ticket full flow
 - Severity-to-priority mapping
 - Team notification publishing after success
-- Reporter notification publishing (when reporter_slack_user_id present)
-- No reporter notification when reporter_slack_user_id is None
+- Reporter notification publishing (when reporter_email present)
+- No reporter notification when reporter_email is None
 - Ticket-incident mapping publication
 - Error handling: Linear API failure → ticket.error, no notifications
 - handle_ticket_command integration with ticket_creator
@@ -136,7 +136,7 @@ def _valid_ticket_command_payload(**overrides) -> dict:
         "body": "## Affected Files\n- OrderController.cs:42\n\n## Root Cause\nNull ref on order lookup",
         "severity": "P2",
         "labels": ["ordering", "triaged-by-mila"],
-        "reporter_slack_user_id": "U12345",
+        "reporter_email": "user@example.com",
         "incident_id": "inc-200",
     }
     base.update(overrides)
@@ -244,7 +244,7 @@ class TestCreateEngineeringTicket:
 
     @pytest.mark.asyncio
     async def test_publishes_reporter_notification_when_reporter_exists(self):
-        command = TicketCommand(**_valid_ticket_command_payload(reporter_slack_user_id="U99999"))
+        command = TicketCommand(**_valid_ticket_command_payload(reporter_email="reporter99@example.com"))
         ticket_creator = AsyncMock()
         ticket_creator.create_issue.return_value = _mock_linear_issue()
         publisher = AsyncMock()
@@ -256,13 +256,13 @@ class TestCreateEngineeringTicket:
         reporter_calls = [c for c in calls if c[0][0] == "notifications" and c[0][2].get("type") == "reporter_update"]
         assert len(reporter_calls) == 1
         payload = reporter_calls[0][0][2]
-        assert payload["slack_user_id"] == "U99999"
+        assert payload["reporter_email"] == "reporter99@example.com"
         assert "inc-200" in payload["message"]
         assert "escalated" in payload["message"]
 
     @pytest.mark.asyncio
     async def test_no_reporter_notification_when_reporter_is_none(self):
-        command = TicketCommand(**_valid_ticket_command_payload(reporter_slack_user_id=None))
+        command = TicketCommand(**_valid_ticket_command_payload(reporter_email=None))
         ticket_creator = AsyncMock()
         ticket_creator.create_issue.return_value = _mock_linear_issue()
         publisher = AsyncMock()

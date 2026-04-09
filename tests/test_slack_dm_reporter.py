@@ -276,86 +276,95 @@ class TestSlackClientDmAdapter:
     def test_implements_reporter_notifier_port(self):
         assert issubclass(SlackClient, ReporterNotifier)
 
-    def test_warns_when_dm_webhook_url_empty(self):
+    def test_warns_when_bot_token_empty(self):
         with patch.object(_slack_client_mod.logger, "warning") as mock_warn:
-            SlackClient(webhook_url="https://hooks.slack.com/test", dm_webhook_url="")
+            SlackClient(webhook_url="https://hooks.slack.com/test", bot_token="")
             calls = [c[0][0] for c in mock_warn.call_args_list]
-            assert any("SLACK_DM_WEBHOOK_URL" in msg for msg in calls)
+            assert any("SLACK_BOT_TOKEN" in msg for msg in calls)
 
     @pytest.mark.asyncio
     async def test_send_dm_success(self):
         client = SlackClient(
             webhook_url="https://hooks.slack.com/test",
-            dm_webhook_url="https://hooks.slack.com/dm-test",
+            bot_token="xoxb-test-token",
         )
-        mock_response = MagicMock()
-        mock_response.status_code = 200
+        mock_web = AsyncMock()
+        mock_web.users_lookupByEmail.return_value = {"user": {"id": "U12345"}}
+        mock_web.conversations_open.return_value = {"channel": {"id": "D12345"}}
+        mock_web.chat_postMessage.return_value = {"ok": True}
+        client._web_client = mock_web
 
-        with patch.object(client._dm_client, "send", return_value=mock_response) as mock_send:
-            result = await client.send_dm(
-                [{"type": "section", "text": {"type": "mrkdwn", "text": "hello"}}],
-                "hello fallback",
-            )
-            assert result is True
-            mock_send.assert_called_once()
+        result = await client.send_dm(
+            "user@example.com",
+            [{"type": "section", "text": {"type": "mrkdwn", "text": "hello"}}],
+            "hello fallback",
+        )
+        assert result is True
+        mock_web.users_lookupByEmail.assert_called_once_with(email="user@example.com")
+        mock_web.conversations_open.assert_called_once_with(users=["U12345"])
+        mock_web.chat_postMessage.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_send_dm_retries_on_failure(self):
         client = SlackClient(
             webhook_url="https://hooks.slack.com/test",
-            dm_webhook_url="https://hooks.slack.com/dm-test",
+            bot_token="xoxb-test-token",
         )
-        fail_response = MagicMock()
-        fail_response.status_code = 500
-        fail_response.body = "server_error"
-        success_response = MagicMock()
-        success_response.status_code = 200
+        mock_web_fail = AsyncMock(side_effect=ConnectionError("unreachable"))
+        mock_web_success = AsyncMock()
+        mock_web_success.users_lookupByEmail.return_value = {"user": {"id": "U12345"}}
+        mock_web_success.conversations_open.return_value = {"channel": {"id": "D12345"}}
+        mock_web_success.chat_postMessage.return_value = {"ok": True}
 
-        with patch.object(
-            client._dm_client, "send", side_effect=[fail_response, success_response]
-        ):
-            with patch.object(_slack_client_mod.asyncio, "sleep", new_callable=AsyncMock):
-                result = await client.send_dm([], "text")
-                assert result is True
+        call_count = 0
+        original_web = AsyncMock()
+
+        async def lookup_side_effect(**kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise ConnectionError("unreachable")
+            return {"user": {"id": "U12345"}}
+
+        original_web.users_lookupByEmail = AsyncMock(side_effect=lookup_side_effect)
+        original_web.conversations_open = AsyncMock(return_value={"channel": {"id": "D12345"}})
+        original_web.chat_postMessage = AsyncMock(return_value={"ok": True})
+        client._web_client = original_web
+
+        with patch.object(_slack_client_mod.asyncio, "sleep", new_callable=AsyncMock):
+            result = await client.send_dm("user@example.com", [], "text")
+            assert result is True
 
     @pytest.mark.asyncio
     async def test_send_dm_fails_after_max_retries(self):
         client = SlackClient(
             webhook_url="https://hooks.slack.com/test",
-            dm_webhook_url="https://hooks.slack.com/dm-test",
+            bot_token="xoxb-test-token",
         )
-        fail_response = MagicMock()
-        fail_response.status_code = 500
-        fail_response.body = "server_error"
+        mock_web = AsyncMock()
+        mock_web.users_lookupByEmail.side_effect = Exception("user not found")
+        client._web_client = mock_web
 
-        with patch.object(client._dm_client, "send", return_value=fail_response):
-            with patch.object(_slack_client_mod.asyncio, "sleep", new_callable=AsyncMock):
-                result = await client.send_dm([], "text")
-                assert result is False
+        with patch.object(_slack_client_mod.asyncio, "sleep", new_callable=AsyncMock):
+            result = await client.send_dm("bad@example.com", [], "text")
+            assert result is False
 
     @pytest.mark.asyncio
-    async def test_send_dm_retries_on_exception(self):
+    async def test_send_dm_fails_when_no_email(self):
         client = SlackClient(
             webhook_url="https://hooks.slack.com/test",
-            dm_webhook_url="https://hooks.slack.com/dm-test",
+            bot_token="xoxb-test-token",
         )
-        success_response = MagicMock()
-        success_response.status_code = 200
-
-        with patch.object(
-            client._dm_client, "send", side_effect=[ConnectionError("unreachable"), success_response]
-        ):
-            with patch.object(_slack_client_mod.asyncio, "sleep", new_callable=AsyncMock):
-                result = await client.send_dm([], "text")
-                assert result is True
+        result = await client.send_dm("", [], "text")
+        assert result is False
 
     @pytest.mark.asyncio
-    async def test_send_dm_fails_when_dm_client_not_configured(self):
+    async def test_send_dm_fails_when_bot_token_not_configured(self):
         client = SlackClient(
             webhook_url="https://hooks.slack.com/test",
-            dm_webhook_url="",
+            bot_token="",
         )
-        result = await client.send_dm([], "text")
+        result = await client.send_dm("user@example.com", [], "text")
         assert result is False
 
 
@@ -374,7 +383,7 @@ class TestHandleReporterUpdate:
             await handle_reporter_update(n, "evt-200")
 
             mock_dm.assert_called_once()
-            blocks = mock_dm.call_args[0][0]
+            blocks = mock_dm.call_args[0][1]
             assert len(blocks) == 4  # header, section, context, actions (reescalation)
 
     @pytest.mark.asyncio
@@ -431,7 +440,7 @@ class TestHandleReporterUpdate:
         with patch.object(_services, "_slack_client") as mock_client:
             mock_client.send_dm = mock_dm
             await handle_reporter_update(n, "evt-200")
-            blocks = mock_dm.call_args[0][0]
+            blocks = mock_dm.call_args[0][1]
             assert len(blocks) == 3  # no actions block
 
     @pytest.mark.asyncio
@@ -442,7 +451,7 @@ class TestHandleReporterUpdate:
         with patch.object(_services, "_slack_client") as mock_client:
             mock_client.send_dm = mock_dm
             await handle_reporter_update(n, "evt-200")
-            fallback = mock_dm.call_args[0][1]
+            fallback = mock_dm.call_args[0][2]
             assert "transient timeout" in fallback
 
 
@@ -461,7 +470,7 @@ class TestHandleReporterResolved:
             await handle_reporter_resolved(n, "evt-300")
 
             mock_dm.assert_called_once()
-            blocks = mock_dm.call_args[0][0]
+            blocks = mock_dm.call_args[0][1]
             assert len(blocks) == 3  # header, section, actions (ticket link)
 
     @pytest.mark.asyncio
@@ -506,7 +515,7 @@ class TestHandleReporterResolved:
         with patch.object(_services, "_slack_client") as mock_client:
             mock_client.send_dm = mock_dm
             await handle_reporter_resolved(n, "evt-300")
-            fallback = mock_dm.call_args[0][1]
+            fallback = mock_dm.call_args[0][2]
             assert "NullReferenceException" in fallback
             assert "resolved" in fallback
 
@@ -518,7 +527,7 @@ class TestHandleReporterResolved:
         with patch.object(_services, "_slack_client") as mock_client:
             mock_client.send_dm = mock_dm
             await handle_reporter_resolved(n, "evt-300")
-            blocks = mock_dm.call_args[0][0]
+            blocks = mock_dm.call_args[0][1]
             assert len(blocks) == 2  # no actions block
 
 

@@ -16,7 +16,6 @@ logger = logging.getLogger(__name__)
 
 def verify_linear_signature(body: bytes, signature: str, secret: str) -> bool:
     expected = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
-    logger.info("HMAC debug — expected=%s received=%s secret_len=%d body_len=%d", expected[:16], signature[:16], len(secret), len(body))
     return hmac.compare_digest(expected, signature)
 
 

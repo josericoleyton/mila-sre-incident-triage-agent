@@ -1,3 +1,4 @@
 redis[hiredis]
 slack-sdk
+aiohttp
 pydantic

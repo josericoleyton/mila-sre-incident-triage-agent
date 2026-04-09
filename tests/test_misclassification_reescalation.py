@@ -83,7 +83,7 @@ def _valid_incident_payload(**overrides) -> dict:
         "description": "Users report 500 errors when searching products.",
         "component": "Catalog.API",
         "severity": "high",
-        "reporter_slack_user_id": "U12345",
+        "reporter_email": "user@example.com",
         "source_type": "userIntegration",
     }
     base.update(overrides)
@@ -558,7 +558,7 @@ class TestReescalationNotification:
 
         payload = notification_calls[0][0][2]
         assert payload["type"] == "reporter_update"
-        assert payload["slack_user_id"] == "U12345"
+        assert payload["reporter_email"] == "user@example.com"
         assert "re-analyzed" in payload["message"]
         assert "escalated" in payload["message"]
         assert payload["reescalation"] is True
@@ -589,7 +589,7 @@ class TestReescalationNotification:
         payload = mod._build_reescalation_notification_payload(state)
 
         assert payload["type"] == "reporter_update"
-        assert payload["slack_user_id"] == "U12345"
+        assert payload["reporter_email"] == "user@example.com"
         assert "Thanks for the feedback" in payload["message"]
         assert "re-analyzed" in payload["message"]
         assert "escalated" in payload["message"]
@@ -618,7 +618,7 @@ class TestTriageCompletedReescalation:
         await node.run(ctx)
 
         calls = publisher.publish.call_args_list
-        completed_calls = [c for c in calls if c[0][0] == "incidents" and c[0][1] == "triage.completed"]
+        completed_calls = [c for c in calls if c[0][0] == "observability" and c[0][1] == "triage.completed"]
         assert len(completed_calls) == 1
 
         payload = completed_calls[0][0][2]
@@ -795,7 +795,7 @@ class TestFullReescalationFlow:
         channels_events = [(c[0][0], c[0][1]) for c in calls]
         assert ("ticket-commands", "ticket.create") in channels_events
         assert ("notifications", "notification.send") in channels_events
-        assert ("incidents", "triage.completed") in channels_events
+        assert ("observability", "triage.completed") in channels_events
 
     @pytest.mark.asyncio
     async def test_normal_bug_publishes_two_events(self):
@@ -816,7 +816,7 @@ class TestFullReescalationFlow:
 
         channels_events = [(c[0][0], c[0][1]) for c in calls]
         assert ("ticket-commands", "ticket.create") in channels_events
-        assert ("incidents", "triage.completed") in channels_events
+        assert ("observability", "triage.completed") in channels_events
 
 
 # ===========================================================================

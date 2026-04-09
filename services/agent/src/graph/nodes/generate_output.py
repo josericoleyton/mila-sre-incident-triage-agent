@@ -17,7 +17,6 @@ def _map_severity(severity_assessment: str) -> str:
     if not severity_assessment or not severity_assessment.strip():
         return "P4"
     sa = severity_assessment.lower()
-    # Check explicit P-level codes first (most reliable when LLM follows instructions)
     if "p1" in sa:
         return "P1"
     elif "p2" in sa:
@@ -103,7 +102,6 @@ def _format_ticket_body(state: TriageState, result: TriageResult) -> str:
             if trace_data.get("status_code") is not None:
                 trace_lines.append(f"- **Status Code:** {trace_data['status_code']}")
             if trace_data.get("error_message"):
-                # Sanitize to prevent markdown injection (strip triple backticks)
                 safe_error = str(trace_data["error_message"]).replace("```", "'''")
                 trace_lines.append(f"- **Error:** `{safe_error}`")
             if trace_lines:
@@ -197,7 +195,7 @@ def _build_ticket_command(state: TriageState, result: TriageResult) -> dict:
         "body": _format_ticket_body(state, result),
         "severity": severity,
         "labels": labels,
-        "reporter_slack_user_id": incident.get("reporter_slack_user_id", ""),
+        "reporter_email": incident.get("reporter_email", ""),
         "incident_id": state.incident_id,
         "event_id": state.event_id,
     }
@@ -234,7 +232,7 @@ def _build_notification_payload(state: TriageState, result: TriageResult) -> dic
         message = f"{LOW_CONFIDENCE_CAVEAT}\n\n{message}"
     return {
         "type": "reporter_update",
-        "slack_user_id": state.incident.get("reporter_slack_user_id", ""),
+        "reporter_email": state.incident.get("reporter_email", ""),
         "message": message,
         "incident_id": state.incident_id,
         "confidence": result.confidence,
@@ -293,7 +291,7 @@ def _build_reescalation_notification_payload(state: TriageState, message: str | 
     """Build notification.send payload for re-escalation confirmation to reporter (Story 3.8)."""
     return {
         "type": "reporter_update",
-        "slack_user_id": state.incident.get("reporter_slack_user_id", ""),
+        "reporter_email": state.incident.get("reporter_email", ""),
         "message": message or REESCALATION_CONFIRMATION_MESSAGE,
         "incident_id": state.incident_id,
         "reescalation": True,
@@ -306,8 +304,7 @@ def _build_reescalation_notification_payload(state: TriageState, message: str | 
 class GenerateOutputNode(BaseNode[TriageState, TriageDeps, TriageResult]):
     async def run(self, ctx: GraphRunContext[TriageState]) -> End[TriageResult]:
         state = ctx.state
-
-        # Story 3.5: Set forced_escalation for proactive incidents even on fallback path
+        
         if state.source_type == "systemIntegration":
             state.forced_escalation = True
 
@@ -317,7 +314,7 @@ class GenerateOutputNode(BaseNode[TriageState, TriageDeps, TriageResult]):
                 state.incident_id,
                 state.event_id,
             )
-            # Story 3.8: Re-escalation always forces bug even on fallback
+            
             fallback_classification = Classification.bug if (
                 state.source_type == "systemIntegration" or state.reescalation
             ) else Classification.non_incident
@@ -342,12 +339,10 @@ class GenerateOutputNode(BaseNode[TriageState, TriageDeps, TriageResult]):
             return End(fallback)
 
         result = state.triage_result
-
-        # Capture LLM's actual classification before any force overrides
+        
         llm_classification = result.classification.value if hasattr(result.classification, "value") else str(result.classification)
         llm_confidence = result.confidence
-
-        # Story 3.5: Force bug classification for proactive (systemIntegration) incidents
+        
         if state.source_type == "systemIntegration":
             result.classification = Classification.bug
             logger.info(
@@ -356,8 +351,7 @@ class GenerateOutputNode(BaseNode[TriageState, TriageDeps, TriageResult]):
                 state.incident_id,
                 state.event_id,
             )
-
-        # Story 3.8: Force bug classification for re-escalated incidents (trust the human)
+            
         if state.reescalation:
             display_classification = llm_classification.replace("_", "-")
             if not state.original_classification:
@@ -367,7 +361,7 @@ class GenerateOutputNode(BaseNode[TriageState, TriageDeps, TriageResult]):
                 f"Initial classification was {display_classification} with confidence {llm_confidence:.2f}. "
                 f"Reporter disagreed — re-analyzing with escalation bias. "
             )
-            # Truncate original reasoning to prevent unbounded growth on repeated re-escalation
+            
             max_original = 3000 - len(reesc_prefix)
             original_reasoning = result.reasoning[:max_original] if len(result.reasoning) > max_original else result.reasoning
             result.reasoning = reesc_prefix + original_reasoning
@@ -390,11 +384,11 @@ class GenerateOutputNode(BaseNode[TriageState, TriageDeps, TriageResult]):
 
         if classification == "bug":
             await self._publish_ticket_create(ctx, result)
-            # Story 3.8: Publish reporter confirmation for re-escalated incidents
+            
             if state.reescalation:
                 await self._publish_reescalation_notification(ctx)
         elif state.source_type == "userIntegration":
-            # Story 3.6: Non-incident dismissal — publish notification directly to notifications channel (AR10)
+            
             await self._publish_notification(ctx, result)
         else:
             logger.warning(

@@ -26,14 +26,14 @@ class RedisTicketMappingStore(TicketMappingStore):
         self,
         linear_ticket_id: str,
         incident_id: str,
-        reporter_slack_user_id: Optional[str],
+        reporter_email: Optional[str],
         identifier: str,
         url: str,
     ) -> None:
         key = f"{MAPPING_KEY_PREFIX}{linear_ticket_id}"
         mapping = {
             "incident_id": incident_id,
-            "reporter_slack_user_id": reporter_slack_user_id or "",
+            "reporter_email": reporter_email or "",
             "identifier": identifier,
             "url": url,
         }
@@ -51,8 +51,8 @@ class RedisTicketMappingStore(TicketMappingStore):
         if not data:
             return None
         decoded = {k.decode() if isinstance(k, bytes) else k: v.decode() if isinstance(v, bytes) else v for k, v in data.items()}
-        if decoded.get("reporter_slack_user_id") == "":
-            decoded["reporter_slack_user_id"] = None
+        if decoded.get("reporter_email") == "":
+            decoded["reporter_email"] = None
         return decoded
 
     async def mark_resolved(self, linear_ticket_id: str) -> bool:

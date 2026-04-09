@@ -61,7 +61,7 @@ def _valid_incident(**overrides) -> dict:
         "component": "Ordering",
         "severity": "High",
         "attachment_url": "https://example.com/screenshot.png",
-        "reporter_slack_user_id": "U99999",
+        "reporter_email": "reporter99@example.com",
         "source_type": "userIntegration",
     }
     base.update(overrides)
@@ -311,7 +311,7 @@ class TestBuildTicketCommand:
         assert "NullReferenceException" in cmd["title"]
         assert cmd["severity"] == "P2"
         assert cmd["incident_id"] == state.incident_id
-        assert cmd["reporter_slack_user_id"] == "U99999"
+        assert cmd["reporter_email"] == "reporter99@example.com"
         assert cmd["event_id"] == state.event_id
         assert isinstance(cmd["body"], str)
         assert isinstance(cmd["labels"], list)
@@ -457,7 +457,7 @@ class TestGenerateOutputNodeBugPath:
         await node.run(ctx)
 
         calls = publisher.publish.call_args_list
-        completed_calls = [c for c in calls if c[0][0] == "incidents" and c[0][1] == "triage.completed"]
+        completed_calls = [c for c in calls if c[0][0] == "observability" and c[0][1] == "triage.completed"]
         assert len(completed_calls) == 1
 
         payload = completed_calls[0][0][2]
@@ -708,7 +708,7 @@ def _otel_incident(**overrides) -> dict:
         "description": "OTEL alert: error_rate > 5% for 5 minutes",
         "component": "Ordering",
         "severity": "High",
-        "reporter_slack_user_id": None,
+        "reporter_email": None,
         "source_type": "systemIntegration",
         "trace_data": {
             "service_name": "ordering-api",
@@ -996,19 +996,19 @@ class TestProactiveTriageCompletedPayload:
 # ---------------------------------------------------------------------------
 
 class TestProactiveReporterHandling:
-    def test_reporter_slack_user_id_empty_for_otel(self):
-        """AC: reporter_slack_user_id is null/empty for systemIntegration events."""
+    def test_reporter_email_empty_for_otel(self):
+        """AC: reporter_email is null/empty for systemIntegration events."""
         mod = _load_generate_output()
         state = _make_otel_state()
         result = _make_bug_result()
         cmd = mod._build_ticket_command(state, result)
 
-        # reporter_slack_user_id should be empty (None from incident -> "" via .get default)
-        assert cmd["reporter_slack_user_id"] in ("", None)
+        # reporter_email should be empty (None from incident -> "" via .get default)
+        assert cmd["reporter_email"] in ("", None)
 
     @pytest.mark.asyncio
     async def test_full_pipeline_ticket_has_no_reporter(self):
-        """End-to-end: proactive ticket command has no reporter_slack_user_id."""
+        """End-to-end: proactive ticket command has no reporter_email."""
         publisher = AsyncMock()
         publisher.publish.return_value = "evt-otel-rpt"
 
@@ -1025,7 +1025,7 @@ class TestProactiveReporterHandling:
         assert len(ticket_calls) == 1
 
         payload = ticket_calls[0][0][2]
-        assert payload["reporter_slack_user_id"] in ("", None)
+        assert payload["reporter_email"] in ("", None)
 
 
 # ---------------------------------------------------------------------------
@@ -1201,7 +1201,7 @@ class TestBuildNotificationPayload:
         payload = mod._build_notification_payload(state, result)
 
         assert payload["type"] == "reporter_update"
-        assert payload["slack_user_id"] == "U99999"
+        assert payload["reporter_email"] == "reporter99@example.com"
         assert payload["message"] == "This is expected behavior during scheduled cache rebuild."
         assert payload["incident_id"] == state.incident_id
         assert payload["confidence"] == 0.92
@@ -1313,7 +1313,7 @@ class TestNonIncidentDismissalPath:
 
         payload = notif_calls[0][0][2]
         assert payload["type"] == "reporter_update"
-        assert payload["slack_user_id"] == "U99999"
+        assert payload["reporter_email"] == "reporter99@example.com"
         assert payload["message"] == "Expected behavior during cache rebuild."
         assert payload["incident_id"] == state.incident_id
         assert payload["allow_reescalation"] is True
@@ -1351,7 +1351,7 @@ class TestNonIncidentDismissalPath:
         await node.run(ctx)
 
         calls = publisher.publish.call_args_list
-        completed_calls = [c for c in calls if c[0][0] == "incidents" and c[0][1] == "triage.completed"]
+        completed_calls = [c for c in calls if c[0][0] == "observability" and c[0][1] == "triage.completed"]
         assert len(completed_calls) == 1
 
         payload = completed_calls[0][0][2]
@@ -1844,7 +1844,7 @@ class TestUnknownSourceTypeGuard:
             incident_id="inc-unknown",
             source_type="unknownIntegration",
             event_id="evt-unknown",
-            incident={"reporter_slack_user_id": ""},
+            incident={"reporter_email": ""},
             triage_started_at=time.monotonic(),
         )
         state.triage_result = _make_non_incident_result()
@@ -1872,7 +1872,7 @@ class TestUnknownSourceTypeGuard:
             incident_id="inc-unknown",
             source_type="unknownIntegration",
             event_id="evt-unknown",
-            incident={"reporter_slack_user_id": ""},
+            incident={"reporter_email": ""},
             triage_started_at=time.monotonic(),
         )
         state.triage_result = _make_non_incident_result()
@@ -1906,7 +1906,7 @@ class TestUnknownSourceTypeGuard:
             incident_id="inc-unknown",
             source_type="unknownIntegration",
             event_id="evt-unknown",
-            incident={"reporter_slack_user_id": ""},
+            incident={"reporter_email": ""},
             triage_started_at=time.monotonic(),
         )
         state.triage_result = _make_non_incident_result()

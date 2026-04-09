@@ -196,7 +196,7 @@ async def handle_reporter_update(notification: Notification, event_id: str) -> N
     blocks = build_reporter_update_blocks(notification)
     fallback_text = notification.message or "Your incident report has been analyzed."
 
-    success = await _slack_client.send_dm(blocks, fallback_text, event_id=event_id)
+    success = await _slack_client.send_dm(notification.reporter_email or "", blocks, fallback_text, event_id=event_id)
     if success:
         logger.info(
             "Reporter DM sent for incident=%s (event_id=%s)",
@@ -222,7 +222,7 @@ async def handle_reporter_resolved(notification: Notification, event_id: str) ->
     title = notification.title or notification.incident_id
     fallback_text = f"Your reported incident '{title}' has been resolved. 🎉"
 
-    success = await _slack_client.send_dm(blocks, fallback_text, event_id=event_id)
+    success = await _slack_client.send_dm(notification.reporter_email or "", blocks, fallback_text, event_id=event_id)
     if success:
         logger.info(
             "Resolved DM sent for incident=%s (event_id=%s)",

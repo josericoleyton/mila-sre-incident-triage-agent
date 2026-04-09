@@ -98,7 +98,7 @@ async def create_engineering_ticket(
             await mapping_store.save_mapping(
                 linear_ticket_id=result.ticket_id,
                 incident_id=command.incident_id,
-                reporter_slack_user_id=command.reporter_slack_user_id,
+                reporter_email=command.reporter_email,
                 identifier=result.identifier,
                 url=result.url,
             )
@@ -117,7 +117,7 @@ async def create_engineering_ticket(
                 "component": command.labels[0] if command.labels else "unknown",
                 "summary": command.title,
                 "incident_id": command.incident_id,
-                "reporter_slack_user_id": command.reporter_slack_user_id,
+                "reporter_email": command.reporter_email,
             },
         )
         logger.info("Published team_alert notification incident_id=%s", command.incident_id, extra={"event_id": event_id})
@@ -125,14 +125,14 @@ async def create_engineering_ticket(
         logger.exception("Failed to publish team_alert notification for event_id=%s", event_id)
 
     # Publish reporter notification if reporter exists
-    if command.reporter_slack_user_id:
+    if command.reporter_email:
         try:
             await publisher.publish(
                 "notifications",
                 "notification.send",
                 {
                     "type": "reporter_update",
-                    "slack_user_id": command.reporter_slack_user_id,
+                    "reporter_email": command.reporter_email,
                     "message": (
                         f"Your incident report has been received and escalated to the engineering team. "
                         f"Tracking ID: {command.incident_id}"
@@ -259,10 +259,10 @@ async def handle_resolution_webhook(
         return False
 
     incident_id = mapping["incident_id"]
-    reporter_slack_user_id = mapping.get("reporter_slack_user_id")
+    reporter_email = mapping.get("reporter_email")
 
     # Skip notification for proactive incidents (no reporter)
-    if not reporter_slack_user_id:
+    if not reporter_email:
         logger.info(
             "No reporter for incident_id=%s (proactive incident) — skipping notification (event_id=%s)",
             incident_id,
@@ -278,7 +278,7 @@ async def handle_resolution_webhook(
             "notification.send",
             {
                 "type": "reporter_resolved",
-                "slack_user_id": reporter_slack_user_id,
+                "reporter_email": reporter_email,
                 "message": message,
                 "incident_id": incident_id,
                 "ticket_url": ticket_url,
@@ -295,7 +295,7 @@ async def handle_resolution_webhook(
     logger.info(
         "Published reporter_resolved notification for incident_id=%s to %s (event_id=%s)",
         incident_id,
-        reporter_slack_user_id,
+        reporter_email,
         event_id,
     )
     return True

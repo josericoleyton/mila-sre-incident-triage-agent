@@ -144,7 +144,7 @@ def _team_alert_payload(**overrides) -> dict:
         "summary": "NullReferenceException when order items collection is empty",
         "source_type": "user_reported",
         "confidence": 0.87,
-        "reporter_slack_user_id": "U12345",
+        "reporter_email": "user@example.com",
     }
     base.update(overrides)
     return base

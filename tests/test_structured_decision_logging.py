@@ -72,7 +72,7 @@ def _valid_incident(**overrides) -> dict:
         "component": "Ordering",
         "severity": "High",
         "attachment_url": "https://example.com/screenshot.png",
-        "reporter_slack_user_id": "U99999",
+        "reporter_email": "reporter99@example.com",
         "source_type": "userIntegration",
     }
     base.update(overrides)

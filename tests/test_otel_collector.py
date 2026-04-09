@@ -161,7 +161,7 @@ class TestOtlpWebhook:
 
         payload = mock_publisher.publish.call_args[0][2]
         assert payload["source_type"] == "systemIntegration"
-        assert payload["reporter_slack_user_id"] is None
+        assert payload["reporter_email"] is None
         assert payload["component"] == "catalog-api"
         assert payload["trace_data"]["trace_id"] == "abc123def456"
         assert payload["trace_data"]["status_code"] == 500
@@ -382,7 +382,7 @@ class TestSimpleOtelWebhookRegression:
 
         pub_payload = mock_publisher.publish.call_args[0][2]
         assert pub_payload["source_type"] == "systemIntegration"
-        assert pub_payload["reporter_slack_user_id"] is None
+        assert pub_payload["reporter_email"] is None
         assert pub_payload["trace_data"]["trace_id"] == "abc123"
 
     def test_malformed_json_returns_400(self, client, mock_publisher):

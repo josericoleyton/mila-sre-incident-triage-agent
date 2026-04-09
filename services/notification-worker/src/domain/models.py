@@ -15,7 +15,7 @@ class Notification(BaseModel):
     incident_id: str
     message: Optional[str] = None
     slack_channel: Optional[str] = None
-    slack_user_id: Optional[str] = None
+    reporter_email: Optional[str] = None
     # team_alert fields
     title: Optional[str] = None
     ticket_url: Optional[str] = None
@@ -23,7 +23,6 @@ class Notification(BaseModel):
     component: Optional[str] = None
     summary: Optional[str] = None
     source_type: Optional[str] = None
-    reporter_slack_user_id: Optional[str] = None
     metadata: dict = {}
     confidence: Optional[float] = None
     # reporter DM fields

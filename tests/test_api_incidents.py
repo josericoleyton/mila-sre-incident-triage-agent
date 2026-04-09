@@ -168,7 +168,7 @@ class TestOtelWebhook:
 
         payload = mock_publisher.publish.call_args[0][2]
         assert payload["source_type"] == "systemIntegration"
-        assert payload["reporter_slack_user_id"] is None
+        assert payload["reporter_email"] is None
         assert payload["trace_data"]["trace_id"] == "abc123"
         assert payload["trace_data"]["status_code"] == 500
 

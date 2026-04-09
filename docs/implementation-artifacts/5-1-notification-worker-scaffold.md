@@ -1,7 +1,7 @@
 # Story 5.1: Notification-Worker Scaffold with Redis Consumer
 
 > **Epic:** 5 — Notifications (Notification-Worker — Slack Only)
-> **Status:** ready-for-dev
+> **Status:** done
 > **Priority:** 🔴 Critical — Core MVP path
 > **Depends on:** Story 1.2 (Redis infrastructure)
 > **FRs:** FR19, FR22, FR24
@@ -29,25 +29,25 @@
 
 ## Tasks / Subtasks
 
-- [ ] **1. Wire Redis consumer in main.py**
+- [x] **1. Wire Redis consumer in main.py**
   - Start async listener loop on `notifications` channel
   - Use `redis.asyncio` pub/sub
   - On each message: validate envelope → deserialize → route to handler
 
-- [ ] **2. Implement notification routing**
+- [x] **2. Implement notification routing**
   - `domain/services.py` — route by `notification.type`:
     - `team_alert` → call team channel handler
     - `reporter_update` → call DM handler
     - `reporter_resolved` → call DM handler
   - Unknown types → log warning, skip
 
-- [ ] **3. Create handler stubs**
+- [x] **3. Create handler stubs**
   - `handle_team_alert(notification)` — Story 5.2 implements
   - `handle_reporter_update(notification)` — Story 5.3 implements
   - `handle_reporter_resolved(notification)` — Story 5.3 implements
   - For now, log: "Notification type={type} for incident={incident_id} — handler not yet implemented"
 
-- [ ] **4. Error handling**
+- [x] **4. Error handling**
   - Malformed events: log warning, skip, continue
   - Handler errors: log error, continue (never crash the consumer loop)
 
@@ -72,6 +72,30 @@
 - Story 5.2: Team channel notification implementation
 - Story 5.3: DM implementation
 
-## Chat Command Log
+## File List
 
-*Dev agent: record your implementation commands and decisions here.*
+- `services/notification-worker/src/main.py` — Modified: wired Redis consumer, on_notification callback
+- `services/notification-worker/src/domain/models.py` — Modified: updated Notification model for all notification types
+- `services/notification-worker/src/domain/services.py` — New: route_notification + handler stubs
+- `tests/test_notification_worker_scaffold.py` — New: 26 tests covering model, routing, stubs, wiring, error handling
+
+## Change Log
+
+- 2026-04-08: Story 5.1 implemented — notification-worker scaffold with Redis consumer, domain routing, handler stubs, and comprehensive error handling
+
+## Dev Agent Record
+
+### Implementation Plan
+- Followed hexagonal architecture pattern from agent and ticket-service
+- Reused existing RedisConsumer adapter (single-channel subscribe) already scaffolded
+- Implemented domain routing in `services.py` using `_HANDLERS` dict keyed by NotificationType enum
+- Updated `Notification` model to accept all fields from ticket-service published payloads (team_alert has ticket_url/severity/component/summary; reporter types have message/slack_user_id)
+- All handler stubs log "not yet implemented" per story spec
+- Error handling: missing payload, malformed payload (ValidationError), unknown types, and handler exceptions all caught and logged without crashing the consumer loop
+- event_id correlation: extracted from envelope in main.py and passed through to route_notification for all log entries
+
+### Completion Notes
+- ✅ All 4 tasks/subtasks complete
+- ✅ 26 tests passing (model validation, routing dispatch, error resilience, main.py wiring, callback integration)
+- ✅ No regressions introduced (pre-existing test failures unrelated to this story)
+- ✅ All acceptance criteria satisfied

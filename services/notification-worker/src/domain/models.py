@@ -12,10 +12,15 @@ class NotificationType(str, Enum):
 
 class Notification(BaseModel):
     type: NotificationType
+    incident_id: str
+    message: Optional[str] = None
     slack_channel: Optional[str] = None
     slack_user_id: Optional[str] = None
-    message: str
+    # team_alert fields
+    ticket_url: Optional[str] = None
+    severity: Optional[str] = None
+    component: Optional[str] = None
+    summary: Optional[str] = None
+    reporter_slack_user_id: Optional[str] = None
     metadata: dict = {}
-    allow_reescalation: bool = False
-    incident_id: str
     confidence: Optional[float] = None

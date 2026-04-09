@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
-from pydantic_ai import Agent, UsageLimits
+from pydantic_ai import Agent, ModelHTTPError
 from pydantic_ai.settings import ModelSettings
 from pydantic_graph import BaseNode, GraphRunContext
 
@@ -13,8 +13,6 @@ from src.graph.tools.search_code import search_code
 from src.llm_circuit_breaker import breaker
 
 logger = logging.getLogger(__name__)
-
-MAX_TOOL_CALLS = 5 
 
 SEARCH_SYSTEM_PROMPT = """\
 You are a code analysis assistant investigating an incident in the eShop (.NET) codebase.
@@ -95,22 +93,41 @@ class SearchCodeNode(BaseNode[TriageState, TriageDeps, TriageResult]):
 
         prompt = _build_search_prompt(state)
         agent = _create_search_agent()
-        try:
-            result = await agent.run(
-                prompt,
-                deps=ctx.deps,
-                model_settings=ModelSettings(max_tokens=2048),
-                usage_limits=UsageLimits(request_limit=MAX_TOOL_CALLS),
-            )
-            state.code_context = result.output
-            breaker.record_success()
-        except Exception:
-            breaker.record_failure()
-            logger.exception(
-                "SearchCodeNode agent run failed for incident %s (event_id=%s); proceeding without code context",
-                state.incident_id,
-                state.event_id,
-            )
+        last_error: Exception | None = None
+        for attempt in range(3):
+            try:
+                result = await agent.run(
+                    prompt,
+                    deps=ctx.deps,
+                    model_settings=ModelSettings(max_tokens=2048),
+                )
+                state.code_context = result.output
+                breaker.record_success()
+                last_error = None
+                break
+            except Exception as exc:
+                last_error = exc
+                is_rate_limit = isinstance(exc, ModelHTTPError) and exc.status_code == 429
+                if is_rate_limit and attempt < 2:
+                    delay = 2 ** attempt
+                    logger.warning(
+                        "SearchCodeNode attempt %d/3 rate-limited (429), retrying in %ds (event_id=%s)",
+                        attempt + 1,
+                        delay,
+                        state.event_id,
+                    )
+                    await __import__("asyncio").sleep(delay)
+                else:
+                    if not is_rate_limit:
+                        breaker.record_failure()
+                    logger.exception(
+                        "SearchCodeNode agent run failed for incident %s (event_id=%s); proceeding without code context",
+                        state.incident_id,
+                        state.event_id,
+                    )
+                    break
+
+        if last_error is not None:
             state.code_context = "Code search unavailable — proceeding with incident description only."
 
         logger.info(

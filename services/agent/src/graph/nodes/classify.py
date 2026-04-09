@@ -4,7 +4,7 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from pydantic_ai import Agent, BinaryContent
+from pydantic_ai import Agent, BinaryContent, ModelHTTPError
 from pydantic_graph import BaseNode, GraphRunContext
 
 from src.config import LLM_MODEL
@@ -139,14 +139,26 @@ class ClassifyNode(BaseNode[TriageState, TriageDeps, TriageResult]):
                 return GenerateOutputNode()
             except Exception as exc:
                 last_error = exc
-                breaker.record_failure()
-                logger.warning(
-                    "ClassifyNode attempt %d/%d failed: %s (event_id=%s)",
-                    attempt + 1,
-                    1 + MAX_RETRIES,
-                    exc,
-                    state.event_id,
-                )
+                is_rate_limit = isinstance(exc, ModelHTTPError) and exc.status_code == 429
+                if is_rate_limit:
+                    delay = 2 ** attempt
+                    logger.warning(
+                        "ClassifyNode attempt %d/%d rate-limited (429), retrying in %ds (event_id=%s)",
+                        attempt + 1,
+                        1 + MAX_RETRIES,
+                        delay,
+                        state.event_id,
+                    )
+                    await __import__("asyncio").sleep(delay)
+                else:
+                    breaker.record_failure()
+                    logger.warning(
+                        "ClassifyNode attempt %d/%d failed: %s (event_id=%s)",
+                        attempt + 1,
+                        1 + MAX_RETRIES,
+                        exc,
+                        state.event_id,
+                    )
 
         logger.error(
             "ClassifyNode exhausted retries for incident %s (event_id=%s): %s",

@@ -58,6 +58,7 @@ def setup_tracing() -> None:
         exporter = OTLPSpanExporter(
             endpoint=endpoint,
             headers={"Authorization": auth_header},
+            timeout=30,
         )
         provider = TracerProvider(
             resource=Resource({"service.name": "mila-agent"}),

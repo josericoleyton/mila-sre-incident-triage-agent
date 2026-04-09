@@ -278,14 +278,13 @@ class TestSlackClientDmAdapter:
 
     def test_warns_when_bot_token_empty(self):
         with patch.object(_slack_client_mod.logger, "warning") as mock_warn:
-            SlackClient(webhook_url="https://hooks.slack.com/test", bot_token="")
+            SlackClient(bot_token="")
             calls = [c[0][0] for c in mock_warn.call_args_list]
             assert any("SLACK_BOT_TOKEN" in msg for msg in calls)
 
     @pytest.mark.asyncio
     async def test_send_dm_success(self):
         client = SlackClient(
-            webhook_url="https://hooks.slack.com/test",
             bot_token="xoxb-test-token",
         )
         mock_web = AsyncMock()
@@ -307,7 +306,6 @@ class TestSlackClientDmAdapter:
     @pytest.mark.asyncio
     async def test_send_dm_retries_on_failure(self):
         client = SlackClient(
-            webhook_url="https://hooks.slack.com/test",
             bot_token="xoxb-test-token",
         )
         mock_web_fail = AsyncMock(side_effect=ConnectionError("unreachable"))
@@ -338,7 +336,6 @@ class TestSlackClientDmAdapter:
     @pytest.mark.asyncio
     async def test_send_dm_fails_after_max_retries(self):
         client = SlackClient(
-            webhook_url="https://hooks.slack.com/test",
             bot_token="xoxb-test-token",
         )
         mock_web = AsyncMock()
@@ -352,7 +349,6 @@ class TestSlackClientDmAdapter:
     @pytest.mark.asyncio
     async def test_send_dm_fails_when_no_email(self):
         client = SlackClient(
-            webhook_url="https://hooks.slack.com/test",
             bot_token="xoxb-test-token",
         )
         result = await client.send_dm("", [], "text")
@@ -361,7 +357,6 @@ class TestSlackClientDmAdapter:
     @pytest.mark.asyncio
     async def test_send_dm_fails_when_bot_token_not_configured(self):
         client = SlackClient(
-            webhook_url="https://hooks.slack.com/test",
             bot_token="",
         )
         result = await client.send_dm("user@example.com", [], "text")

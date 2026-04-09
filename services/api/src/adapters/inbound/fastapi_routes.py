@@ -68,8 +68,10 @@ async def create_incident(
         file_size = len(contents)
         await file.seek(0)  # reset for later save
 
+    file_name: str | None = file.filename if file and file.filename else None
+
     try:
-        validate_incident(title, file_content_type, file_size)
+        validate_incident(title, file_content_type, file_size, file_name)
     except ValidationError as exc:
         return _error_response(422, exc.message, "VALIDATION_ERROR")
 

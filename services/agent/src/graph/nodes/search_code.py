@@ -4,6 +4,7 @@ import logging
 from dataclasses import dataclass
 
 from pydantic_ai import Agent, RunContext
+from pydantic_ai.settings import ModelSettings
 from pydantic_graph import BaseNode, GraphRunContext
 
 from src.config import LLM_MODEL
@@ -12,6 +13,8 @@ from src.graph.tools.read_file import read_file
 from src.graph.tools.search_code import search_code
 
 logger = logging.getLogger(__name__)
+
+MAX_TOOL_CALLS = 10  # prevent unbounded LLM loops on persistent tool failures
 
 SEARCH_SYSTEM_PROMPT = """\
 You are a code analysis assistant investigating an incident in the eShop (.NET) codebase.
@@ -22,6 +25,11 @@ Strategy:
 2. Read promising files to understand the code.
 3. Refine your search based on what you learn — search again with better queries.
 4. Stop when you have enough code context to understand the probable root cause.
+
+IMPORTANT:
+- Make at most 5 search_code calls. After that, summarize what you found and stop.
+- If a tool returns an authentication error, STOP immediately — do not retry.
+- If searches return no useful results, proceed with what you have.
 
 Return a summary of the relevant code you found, including file paths and key snippets.
 """
@@ -87,8 +95,20 @@ class SearchCodeNode(BaseNode[TriageState, TriageDeps, TriageResult]):
 
         prompt = _build_search_prompt(state)
         agent = _create_search_agent()
-        result = await agent.run(prompt, deps=ctx.deps)
-        state.code_context = result.output
+        try:
+            result = await agent.run(
+                prompt,
+                deps=ctx.deps,
+                model_settings=ModelSettings(max_tokens=2048),
+            )
+            state.code_context = result.output
+        except Exception:
+            logger.exception(
+                "SearchCodeNode agent run failed for incident %s (event_id=%s); proceeding without code context",
+                state.incident_id,
+                state.event_id,
+            )
+            state.code_context = "Code search unavailable — proceeding with incident description only."
 
         logger.info(
             "SearchCodeNode completed: %d chars of code context (event_id=%s)",

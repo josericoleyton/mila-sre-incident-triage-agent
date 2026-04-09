@@ -39,6 +39,9 @@ class GitHubClient(CodeRepository):
                 "/search/code",
                 params={"q": f"{query} repo:{REPO}"},
             )
+            if resp.status_code == 401:
+                logger.error("GitHub API authentication failed (401) — GITHUB_TOKEN is missing or invalid")
+                return [{"error": "GITHUB_AUTH_FAILED: Token is missing or invalid. Code search is unavailable."}]
             if resp.status_code in (403, 429):
                 logger.warning("GitHub API rate limit reached (status %s)", resp.status_code)
                 return [{"error": "GitHub API rate limit reached. Try a different query or wait."}]
@@ -68,6 +71,9 @@ class GitHubClient(CodeRepository):
     async def get_file_content(self, path: str) -> str:
         try:
             resp = await self._client.get(f"/repos/{REPO}/contents/{path}")
+            if resp.status_code == 401:
+                logger.error("GitHub API authentication failed (401) — GITHUB_TOKEN is missing or invalid")
+                return "GITHUB_AUTH_FAILED: Token is missing or invalid. File reading is unavailable."
             if resp.status_code == 404:
                 return f"File not found: {path}"
             if resp.status_code in (403, 429):

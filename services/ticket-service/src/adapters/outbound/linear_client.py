@@ -56,11 +56,10 @@ class LinearClient(TicketCreator):
                 "description": body,
                 "priority": priority,
                 "teamId": team_id,
-                "labelIds": labels,
             }
         }
         headers = {
-            "Authorization": f"Bearer {config.LINEAR_API_KEY}",
+            "Authorization": config.LINEAR_API_KEY,
             "Content-Type": "application/json",
         }
 
@@ -74,13 +73,17 @@ class LinearClient(TicketCreator):
                 )
                 response.raise_for_status()
                 data = response.json()
+                logger.debug("Linear API response: %s", str(data)[:1000])
 
-                result = data.get("data", {}).get("issueCreate", {})
-                if not result.get("success"):
-                    errors = data.get("errors", [])
-                    raise RuntimeError(f"Linear API returned success=false: {errors}")
+                errors = data.get("errors")
+                if errors:
+                    raise RuntimeError(f"Linear GraphQL errors: {errors}")
 
-                issue = result["issue"]
+                issue_create = (data.get("data") or {}).get("issueCreate") or {}
+                if not issue_create.get("success"):
+                    raise RuntimeError(f"Linear API returned success=false: {data}")
+
+                issue = issue_create["issue"]
                 logger.info(
                     "Linear issue created: %s (%s)",
                     issue["identifier"],
@@ -88,8 +91,10 @@ class LinearClient(TicketCreator):
                 )
                 return issue
 
-            except (httpx.HTTPStatusError, httpx.RequestError) as exc:
+            except (httpx.HTTPStatusError, httpx.RequestError, RuntimeError) as exc:
                 last_exc = exc
+                if isinstance(exc, httpx.HTTPStatusError):
+                    logger.warning("Linear API response body: %s", exc.response.text[:500])
                 if attempt < MAX_RETRIES:
                     wait = BACKOFF_SECONDS[attempt]
                     logger.warning(

@@ -367,7 +367,7 @@ class GenerateOutputNode(BaseNode[TriageState, TriageDeps, TriageResult]):
             )
 
     async def _publish_triage_completed(self, ctx: GraphRunContext[TriageState], result: TriageResult) -> None:
-        """Publish triage.completed observability event to incidents channel."""
+        """Publish triage.completed observability event to observability channel."""
         state = ctx.state
         duration_ms = 0
         if state.triage_started_at is not None:
@@ -375,7 +375,7 @@ class GenerateOutputNode(BaseNode[TriageState, TriageDeps, TriageResult]):
 
         payload = _build_triage_completed_payload(state, result, duration_ms)
         try:
-            event_id = await ctx.deps.publisher.publish("incidents", "triage.completed", payload)
+            event_id = await ctx.deps.publisher.publish("observability", "triage.completed", payload)
             logger.info(
                 "Published triage.completed for incident %s (event_id=%s, published_event_id=%s, duration_ms=%d)",
                 state.incident_id,

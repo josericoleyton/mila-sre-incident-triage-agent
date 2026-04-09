@@ -28,6 +28,11 @@ async def handle_incident_event(
 ) -> Optional[TriageState]:
     """Handle an incident.created event from the incidents channel."""
     event_id = envelope.get("event_id", "unknown")
+    event_type = envelope.get("event_type", "")
+
+    if event_type != "incident.created":
+        logger.debug("Ignoring event_type=%s on incidents channel (event_id=%s)", event_type, event_id)
+        return None
 
     try:
         incident = IncidentEvent.model_validate(envelope["payload"])

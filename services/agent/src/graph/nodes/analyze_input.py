@@ -27,8 +27,12 @@ FILE_REF_PATTERN = re.compile(
 )
 
 
-def _extract_signals(incident: dict) -> dict:
-    """Extract key signals from incident data: error messages, stack traces, file refs."""
+def _extract_signals(incident: dict, attachments: list[dict] | None = None) -> dict:
+    """Extract key signals from incident data: error messages, stack traces, file refs.
+
+    Also extracts signals from any processed text attachments (e.g. log files) so that
+    precise technical terms in attached logs contribute to the code search.
+    """
     text_parts: list[str] = []
     for key in ("title", "description"):
         val = incident.get(key)
@@ -47,6 +51,14 @@ def _extract_signals(incident: dict) -> dict:
         error_msgs.extend(ERROR_PATTERN.findall(trace_text))
         stack_traces.extend(STACK_TRACE_PATTERN.findall(trace_text))
         file_refs.extend(FILE_REF_PATTERN.findall(trace_text))
+
+    if attachments:
+        for att in attachments:
+            if att.get("type") == "text" and att.get("content"):
+                att_text = att["content"]
+                error_msgs.extend(ERROR_PATTERN.findall(att_text))
+                stack_traces.extend(STACK_TRACE_PATTERN.findall(att_text))
+                file_refs.extend(FILE_REF_PATTERN.findall(att_text))
 
     return {
         "title": incident.get("title", ""),
@@ -137,13 +149,13 @@ class AnalyzeInputNode(BaseNode[TriageState, TriageDeps, TriageResult]):
             state.event_id,
         )
 
-        state.signals = _extract_signals(state.incident)
-
         state.multimodal_content = _process_attachments(
             state.incident_id,
             state.incident.get("attachment_url"),
             event_id=state.event_id,
         )
+
+        state.signals = _extract_signals(state.incident, attachments=state.multimodal_content)
 
         logger.info(
             "AnalyzeInputNode completed: %d error_msgs, %d stack_traces, %d file_refs, %d attachments (event_id=%s)",

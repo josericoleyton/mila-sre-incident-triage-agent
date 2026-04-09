@@ -23,3 +23,8 @@ Items identified during code reviews that are deferred for future stories or cro
 ## Deferred from: code review of story-3.8 (2026-04-08)
 
 - **W1: Empty `slack_user_id` fallback on re-escalation notification** — `state.incident.get("reporter_slack_user_id", "")` defaults to empty string with no validation. Pre-existing pattern shared by all notification payloads (see story-3.6 W2).
+
+## Deferred from: code review of story-6.1 (2026-04-08)
+
+- **W1: Notification-worker missing domain-level logs** — `services/notification-worker/src/domain/services.py` is empty (Slack integration not yet implemented). Task 3 of Story 6.1 requires Slack send/success/failure logs but these are blocked by the scaffold state. Should be addressed when Slack integration is implemented (Story 5.2+).
+- **W2: No `trace_id`/`span_id` in JSON log format** — The OTEL collector is configured (`infra/otel-collector-config.yaml`) but the `StructuredJsonFormatter` emits no trace context fields. Cross-service request correlation requires OTEL SDK integration beyond Python stdlib logging. Consider adding `opentelemetry-instrumentation-logging` or manual trace context injection in a future observability story.

@@ -106,10 +106,15 @@ async def create_incident(
         "prompt_injection_detected": prompt_injection_detected,
     }
 
+    logger.info(
+        "Incident received incident_id=%s component=%s severity=%s has_attachment=%s source_type=userIntegration",
+        incident_id, component, severity, attachment_url is not None,
+    )
+
     try:
         pub = await get_publisher()
         event_id = await pub.publish("incidents", "incident.created", payload)
-        logger.info("incident.created published event_id=%s incident_id=%s", event_id, incident_id)
+        logger.info("incident.created published incident_id=%s", incident_id, extra={"event_id": event_id})
     except Exception:
         logger.exception("Failed to publish incident.created event_id=N/A incident_id=%s", incident_id)
         return _error_response(503, "Service temporarily unavailable", "PUBLISH_ERROR")
@@ -149,10 +154,15 @@ async def otel_webhook(request: Request):
         },
     }
 
+    logger.info(
+        "Incident received incident_id=%s component=%s source_type=systemIntegration",
+        incident_id, body.get("service_name"),
+    )
+
     try:
         pub = await get_publisher()
         event_id = await pub.publish("incidents", "incident.created", payload)
-        logger.info("incident.created (otel) published event_id=%s incident_id=%s", event_id, incident_id)
+        logger.info("incident.created (otel) published incident_id=%s", incident_id, extra={"event_id": event_id})
     except Exception:
         logger.exception("Failed to publish otel incident.created event_id=N/A incident_id=%s", incident_id)
         return _error_response(503, "Service temporarily unavailable", "PUBLISH_ERROR")

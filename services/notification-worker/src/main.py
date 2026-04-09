@@ -3,11 +3,9 @@ import logging
 
 from src.adapters.inbound.redis_consumer import RedisConsumer
 from src.domain.services import route_notification
+from src.json_logging import setup_logging
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='{"timestamp":"%(asctime)s","level":"%(levelname)s","service":"notification-worker","message":"%(message)s"}',
-)
+setup_logging()
 logger = logging.getLogger(__name__)
 
 

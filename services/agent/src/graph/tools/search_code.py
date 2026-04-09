@@ -14,7 +14,7 @@ async def search_code(ctx: RunContext[TriageDeps], query: str) -> str:
     You can refine your search by calling this tool multiple times with different queries.
     If you get an authentication error, STOP searching — do not retry.
     """
-    logger.info("search_code called with query: %s", query)
+    logger.info("search_code called query_length=%d", len(query))
     results = await ctx.deps.github_client.search_code(query)
 
     if not results:

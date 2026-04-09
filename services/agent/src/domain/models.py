@@ -26,6 +26,8 @@ class IncidentEvent(BaseModel):
     source_type: Literal["userIntegration", "systemIntegration"]
     trace_data: Optional[dict] = None
     prompt_injection_detected: bool = False
+    reporter_feedback: Optional[str] = None
+    original_classification: Optional[str] = None
 
 
 class TriageResult(BaseModel):
@@ -47,6 +49,8 @@ class TriageState:
     incident: dict = field(default_factory=dict)
     triage_result: Optional[TriageResult] = None
     reescalation: bool = False
+    reporter_feedback: str = ""
+    original_classification: str = ""
     prompt_injection_detected: bool = False
     # Signals extracted by AnalyzeInputNode
     signals: dict = field(default_factory=dict)

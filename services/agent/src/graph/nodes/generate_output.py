@@ -73,7 +73,18 @@ def _format_ticket_body(state: TriageState, result: TriageResult) -> str:
     incident = state.incident
     sections: list[str] = []
 
-    # Proactive detection banner for systemIntegration incidents
+    if state.reescalation:
+        sections.append("## 🔄 Re-escalated — Reporter disagreed with original non-incident classification")
+        reesc_lines = []
+        if state.original_classification:
+            safe_classification = _sanitize_markdown(state.original_classification)
+            reesc_lines.append(f"- **Original Classification:** {safe_classification}")
+        if state.reporter_feedback:
+            safe_feedback = _sanitize_markdown(state.reporter_feedback[:2000])
+            reesc_lines.append(f"- **Reporter Feedback:** {safe_feedback}")
+        reesc_lines.append("- **Action:** Human override accepted — escalated to engineering")
+        sections.append("\n".join(reesc_lines))
+
     if state.source_type == "systemIntegration":
         sections.append(
             "## 🤖 Proactive Detection — This incident was auto-detected from production telemetry (not user-reported)"
@@ -98,22 +109,18 @@ def _format_ticket_body(state: TriageState, result: TriageResult) -> str:
             if trace_lines:
                 sections.append("## 📡 OTEL Trace Metadata\n" + "\n".join(trace_lines))
 
-    # Affected files
     if result.file_refs:
         file_lines = "\n".join(f"- `{ref}`" for ref in result.file_refs)
         sections.append(f"## 📍 Affected Files\n{file_lines}")
     else:
         sections.append("## 📍 Affected Files\n- _No specific files identified_")
 
-    # Root cause
     root_cause = result.root_cause or "Unable to determine root cause"
     sections.append(f"## 🔍 Root Cause\n{root_cause}")
 
-    # Suggested fix
     suggested_fix = result.suggested_fix or "Further investigation required"
     sections.append(f"## 🛠️ Suggested Investigation\n{suggested_fix}")
 
-    # Original report
     title = incident.get("title", "N/A")
     component = incident.get("component", "N/A")
     reporter_severity_display = _sanitize_markdown(str(incident.get("severity", "N/A")))
@@ -124,14 +131,11 @@ def _format_ticket_body(state: TriageState, result: TriageResult) -> str:
         f"**Reporter Severity:** {reporter_severity_display}",
     ]
     if description:
-        # Fence user-supplied description to prevent markdown injection
         report_lines.append(f"\n```\n{description}\n```")
     sections.append("## 📋 Original Report\n" + "\n".join(report_lines))
 
-    # Tracking ID
     sections.append(f"## 🔗 Tracking\nIncident ID: `{state.incident_id}`")
 
-    # Attachments
     attachment_url = incident.get("attachment_url")
     if attachment_url:
         sections.append(f"## 📎 Attachments\n- {attachment_url}")
@@ -141,10 +145,8 @@ def _format_ticket_body(state: TriageState, result: TriageResult) -> str:
     else:
         sections.append("## 📎 Attachments\n- _None_")
 
-    # Triage reasoning (metadata only — no raw user input per NFR5)
     sections.append(f"## 🧠 Triage Reasoning\n{result.reasoning}")
 
-    # Severity assessment with reporter delta (structured P-level comparison)
     severity_label = _map_severity(result.severity_assessment)
     reporter_severity_raw = incident.get("severity")
     severity_lines = [f"- **Agent Severity:** {severity_label} — {result.severity_assessment}"]
@@ -161,7 +163,6 @@ def _format_ticket_body(state: TriageState, result: TriageResult) -> str:
         severity_lines.append("- _No reporter severity provided — assessed purely from code analysis_")
     sections.append("## 📊 Severity Assessment\n" + "\n".join(severity_lines))
 
-    # Confidence assessment
     confidence_lines = [f"- **Confidence:** {result.confidence:.2f}"]
     if result.confidence < CONFIDENCE_THRESHOLD:
         confidence_lines.append(
@@ -182,6 +183,8 @@ def _build_ticket_command(state: TriageState, result: TriageResult) -> dict:
     title = incident.get("title", "Untitled incident")
 
     labels = ["triaged-by-mila"]
+    if state.reescalation:
+        labels.append("reescalated")
     component = incident.get("component")
     if component:
         labels.append(component)
@@ -257,6 +260,30 @@ def _build_triage_completed_payload(state: TriageState, result: TriageResult, du
     }
 
 
+REESCALATION_CONFIRMATION_MESSAGE = (
+    "Thanks for the feedback. I've re-analyzed your report and "
+    "escalated it to the engineering team."
+)
+
+REESCALATION_FALLBACK_MESSAGE = (
+    "Thanks for the feedback. We couldn't fully re-analyze your report, "
+    "but we've escalated it to the engineering team."
+)
+
+
+def _build_reescalation_notification_payload(state: TriageState, message: str | None = None) -> dict:
+    """Build notification.send payload for re-escalation confirmation to reporter (Story 3.8)."""
+    return {
+        "type": "reporter_update",
+        "slack_user_id": state.incident.get("reporter_slack_user_id", ""),
+        "message": message or REESCALATION_CONFIRMATION_MESSAGE,
+        "incident_id": state.incident_id,
+        "reescalation": True,
+        "allow_reescalation": False,
+        "event_id": state.event_id,
+    }
+
+
 @dataclass
 class GenerateOutputNode(BaseNode[TriageState, TriageDeps, TriageResult]):
     async def run(self, ctx: GraphRunContext[TriageState]) -> End[TriageResult]:
@@ -272,27 +299,63 @@ class GenerateOutputNode(BaseNode[TriageState, TriageDeps, TriageResult]):
                 state.incident_id,
                 state.event_id,
             )
+            # Story 3.8: Re-escalation always forces bug even on fallback
+            fallback_classification = Classification.bug if (
+                state.source_type == "systemIntegration" or state.reescalation
+            ) else Classification.non_incident
+            if state.reescalation and not state.original_classification:
+                state.original_classification = "unknown \u2014 classification failed"
             fallback = TriageResult(
-                classification=Classification.bug if state.source_type == "systemIntegration" else Classification.non_incident,
+                classification=fallback_classification,
                 confidence=0.0,
                 reasoning="Classification failed — no result produced.",
                 severity_assessment="unknown — classification failed",
-                resolution_explanation=FALLBACK_CLASSIFICATION_FAILED_MESSAGE if state.source_type == "userIntegration" else None,
+                resolution_explanation=FALLBACK_CLASSIFICATION_FAILED_MESSAGE if (
+                    state.source_type == "userIntegration" and not state.reescalation
+                ) else None,
             )
-            if state.source_type == "userIntegration":
+            if fallback_classification == Classification.bug:
+                await self._publish_ticket_create(ctx, fallback)
+                if state.reescalation:
+                    await self._publish_reescalation_notification(ctx, message=REESCALATION_FALLBACK_MESSAGE)
+            elif state.source_type == "userIntegration":
                 await self._publish_notification(ctx, fallback)
             await self._publish_triage_completed(ctx, fallback)
             return End(fallback)
 
         result = state.triage_result
 
+        # Capture LLM's actual classification before any force overrides
+        llm_classification = result.classification.value if hasattr(result.classification, "value") else str(result.classification)
+        llm_confidence = result.confidence
+
         # Story 3.5: Force bug classification for proactive (systemIntegration) incidents
         if state.source_type == "systemIntegration":
-            original_classification = result.classification.value if hasattr(result.classification, "value") else str(result.classification)
             result.classification = Classification.bug
             logger.info(
                 "Story 3.5: Forced classification from %s to bug for proactive incident %s (event_id=%s)",
-                original_classification,
+                llm_classification,
+                state.incident_id,
+                state.event_id,
+            )
+
+        # Story 3.8: Force bug classification for re-escalated incidents (trust the human)
+        if state.reescalation:
+            display_classification = llm_classification.replace("_", "-")
+            if not state.original_classification:
+                state.original_classification = f"{display_classification} (confidence: {llm_confidence:.2f})"
+            result.classification = Classification.bug
+            reesc_prefix = (
+                f"Initial classification was {display_classification} with confidence {llm_confidence:.2f}. "
+                f"Reporter disagreed — re-analyzing with escalation bias. "
+            )
+            # Truncate original reasoning to prevent unbounded growth on repeated re-escalation
+            max_original = 3000 - len(reesc_prefix)
+            original_reasoning = result.reasoning[:max_original] if len(result.reasoning) > max_original else result.reasoning
+            result.reasoning = reesc_prefix + original_reasoning
+            logger.info(
+                "Story 3.8: Forced classification from %s to bug for re-escalated incident %s (event_id=%s)",
+                llm_classification,
                 state.incident_id,
                 state.event_id,
             )
@@ -309,6 +372,9 @@ class GenerateOutputNode(BaseNode[TriageState, TriageDeps, TriageResult]):
 
         if classification == "bug":
             await self._publish_ticket_create(ctx, result)
+            # Story 3.8: Publish reporter confirmation for re-escalated incidents
+            if state.reescalation:
+                await self._publish_reescalation_notification(ctx)
         elif state.source_type == "userIntegration":
             # Story 3.6: Non-incident dismissal — publish notification directly to notifications channel (AR10)
             await self._publish_notification(ctx, result)
@@ -362,6 +428,26 @@ class GenerateOutputNode(BaseNode[TriageState, TriageDeps, TriageResult]):
         except Exception:
             logger.exception(
                 "Failed to publish notification.send for incident %s (event_id=%s)",
+                state.incident_id,
+                state.event_id,
+            )
+
+    async def _publish_reescalation_notification(self, ctx: GraphRunContext[TriageState], message: str | None = None) -> None:
+        """Publish re-escalation confirmation notification to reporter (Story 3.8)."""
+        state = ctx.state
+        payload = _build_reescalation_notification_payload(state, message=message)
+        try:
+            event_id = await ctx.deps.publisher.publish("notifications", "notification.send", payload)
+            logger.info(
+                "Published reescalation confirmation for incident %s to notifications "
+                "(event_id=%s, published_event_id=%s)",
+                state.incident_id,
+                state.event_id,
+                event_id,
+            )
+        except Exception:
+            logger.exception(
+                "Failed to publish reescalation notification for incident %s (event_id=%s)",
                 state.incident_id,
                 state.event_id,
             )

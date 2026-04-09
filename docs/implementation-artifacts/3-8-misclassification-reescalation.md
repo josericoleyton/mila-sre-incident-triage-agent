@@ -1,7 +1,7 @@
 # Story 3.8: Misclassification Re-Escalation Handling
 
 > **Epic:** 3 — AI Triage & Code Analysis (Agent)
-> **Status:** ready-for-dev
+> **Status:** review
 > **Priority:** 🟢 Low — Agent intelligence polish (demo impact)
 > **Depends on:** Story 3.3b (Classification pipeline), Story 3.4 (Bug path)
 > **FRs:** Journey 4 (Lucia — misclassification recovery)
@@ -39,32 +39,32 @@
 
 ## Tasks / Subtasks
 
-- [ ] **1. Handle reescalation events in consumer**
+- [x] **1. Handle reescalation events in consumer**
   - Already wired in Story 3.1 (dual channel subscription)
   - Parse `incident.reescalate` payload: incident_id, original_incident_data, reporter_feedback
 
-- [ ] **2. Re-initialize TriageState with reescalation context**
+- [x] **2. Re-initialize TriageState with reescalation context**
   - Set `TriageState.reescalation = true`
   - Include reporter feedback as additional context
   - Include original classification result for the LLM to reflect on
 
-- [ ] **3. Force bug classification on re-escalation**
+- [x] **3. Force bug classification on re-escalation**
   - In `GenerateOutputNode`: if `state.reescalation == True` → force `Classification.bug`
   - The LLM still runs full analysis but the outcome is forced (trust the human)
 
-- [ ] **4. Enhance ticket body for re-escalated incidents**
+- [x] **4. Enhance ticket body for re-escalated incidents**
   - Add `🔄 Re-escalated` indicator
   - Include original classification and reasoning
   - Include reporter feedback
   - Include new analysis reasoning
 
-- [ ] **5. Publish re-escalation confirmation notification**
+- [x] **5. Publish re-escalation confirmation notification**
   - After ticket.create is published, also publish `notification.send` with:
     - `type: "reporter_update"`
     - `message`: "Thanks for the feedback. I've re-analyzed your report and escalated it to the engineering team."
   - This is published to `notifications` channel for the Notification-Worker
 
-- [ ] **6. Set reescalation flag in triage.completed**
+- [x] **6. Set reescalation flag in triage.completed**
   - `reescalation: true` in the observability event payload
 
 ## Dev Notes
@@ -95,6 +95,54 @@
 - Story 5.3: Slack re-escalation button and interaction callback
 - Story 2.2: API /api/webhooks/slack endpoint
 
+### Review Findings
+
+#### Decision Needed (Resolved)
+- [x] [Review][Decision] **D1 — Slack DM missing `Ticket: {link}` per spec AC3** — Resolved: `incident_id` already in payload; Notification-Worker enriches downstream.
+- [x] [Review][Decision] **D2 — 1000-char reasoning cap vs "full triage" language** — Resolved: increased cap to 3000.
+- [x] [Review][Decision] **D3 — `original_classification` always "" at classify time** — Resolved: added `original_classification` to IncidentEvent + extracted in handler.
+
+#### Patches (Applied)
+- [x] [Review][Patch] **P1 — Newline injection in reporter_feedback prompt** — Fixed: strip `\n` and `\r` in `_build_reescalation_context`. [classify.py:28]
+- [x] [Review][Patch] **P2 — systemIntegration + reescalation: original_classification recorded as "bug"** — Fixed: capture LLM classification before any force overrides. [generate_output.py:330]
+- [x] [Review][Patch] **P3 — Fallback path: `original_classification` stays ""** — Fixed: set to "unknown — classification failed" when not already populated. [generate_output.py:308]
+- [x] [Review][Patch] **P4 — `original_classification` not sanitized in ticket body** — Fixed: apply `_sanitize_markdown` before rendering. [generate_output.py:84]
+- [x] [Review][Patch] **P5 — reporter_feedback unbounded in ticket body** — Fixed: truncate to 2000 chars before sanitize. [generate_output.py:87]
+- [x] [Review][Patch] **P6 — Reasoning prefix uses underscore `non_incident` vs spec's `non-incident`** — Fixed: `replace("_", "-")` on display classification. [generate_output.py:348]
+- [x] [Review][Patch] **P7 — Fallback reescalation sends success notification despite no analysis** — Fixed: separate fallback message "couldn't fully re-analyze". [generate_output.py:320]
+
+#### Deferred
+- [x] [Review][Defer] **W1 — Empty `slack_user_id` fallback on notification** [blind] — deferred, pre-existing
+
 ## Chat Command Log
 
-*Dev agent: record your implementation commands and decisions here.*
+### Dev Agent Record — Implementation (2026-04-08)
+
+**Implementation Plan:**
+- Added `reporter_feedback` optional field to `IncidentEvent` model
+- Added `reporter_feedback` and `original_classification` fields to `TriageState`
+- Updated `handle_reescalation_event` to extract and propagate reporter feedback
+- Enhanced `_build_classify_prompt` to include reporter feedback, original classification, and escalation bias instruction for re-escalation context
+- Added forced bug classification in `GenerateOutputNode.run()` for re-escalated incidents (mirrors Story 3.5 pattern for systemIntegration)
+- Enhanced `_format_ticket_body` with re-escalation banner showing original classification, reporter feedback, and human override action
+- Added `_build_reescalation_notification_payload` function and `_publish_reescalation_notification` method
+- Updated routing logic: re-escalation publishes 3 events (ticket.create → notification.send → triage.completed)
+- Fallback path also forces bug and publishes all 3 events for re-escalation
+
+**Completion Notes:**
+- 37 new tests in `test_misclassification_reescalation.py` — all passing
+- 341/342 total tests pass (1 pre-existing failure in test_ui_nginx.py unrelated to this story)
+- All 6 acceptance criteria satisfied
+- NFR5 respected: reporter feedback sanitized via `_sanitize_markdown` before rendering in ticket body
+- AR2: All published events use the Redis envelope format via `RedisPublisher.publish()`
+- ER3: All log entries include `event_id`
+
+**File List:**
+- `services/agent/src/domain/models.py` — added `reporter_feedback` to IncidentEvent, `reporter_feedback` + `original_classification` to TriageState
+- `services/agent/src/domain/triage_handler.py` — updated `handle_reescalation_event` to extract reporter_feedback
+- `services/agent/src/graph/nodes/classify.py` — enhanced `_build_classify_prompt` with reescalation context
+- `services/agent/src/graph/nodes/generate_output.py` — forced bug classification, re-escalation ticket body, re-escalation notification, fallback path
+- `tests/test_misclassification_reescalation.py` — 37 new tests covering all 6 tasks
+
+**Change Log:**
+- Story 3.8 implemented: Misclassification re-escalation handling (Date: 2026-04-08)

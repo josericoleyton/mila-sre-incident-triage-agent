@@ -11,6 +11,7 @@ from src.config import LLM_MODEL
 from src.domain.models import TriageDeps, TriageResult, TriageState
 from src.graph.tools.read_file import read_file
 from src.graph.tools.search_code import search_code
+from src.llm_circuit_breaker import breaker
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +37,7 @@ Return a summary of the relevant code you found, including file paths and key sn
 
 def _create_search_agent() -> Agent:
     return Agent(
-        LLM_MODEL,
+        breaker.model,
         deps_type=TriageDeps,
         instructions=SEARCH_SYSTEM_PROMPT,
         tools=[search_code, read_file],
@@ -102,7 +103,9 @@ class SearchCodeNode(BaseNode[TriageState, TriageDeps, TriageResult]):
                 model_settings=ModelSettings(max_tokens=2048),
             )
             state.code_context = result.output
+            breaker.record_success()
         except Exception:
+            breaker.record_failure()
             logger.exception(
                 "SearchCodeNode agent run failed for incident %s (event_id=%s); proceeding without code context",
                 state.incident_id,

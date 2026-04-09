@@ -4,12 +4,13 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from pydantic_ai import Agent
+from pydantic_ai import Agent, BinaryContent
 from pydantic_graph import BaseNode, GraphRunContext
 
 from src.config import LLM_MODEL
 from src.domain.models import TriageDeps, TriageResult, TriageState
 from src.domain.prompts import PROMPT_INJECTION_ADDENDUM, TRIAGE_SYSTEM_PROMPT
+from src.llm_circuit_breaker import breaker
 
 if TYPE_CHECKING:
     from src.graph.nodes.generate_output import GenerateOutputNode
@@ -32,8 +33,14 @@ def _build_reescalation_context(state: TriageState) -> list[str]:
     return parts
 
 
-def _build_classify_prompt(state: TriageState) -> str:
-    """Build the classification prompt from triage state."""
+def _build_classify_prompt(state: TriageState) -> str | list:
+    """Build the classification prompt from triage state.
+
+    Returns a plain string when no images are present, or a list of
+    text + BinaryContent parts for multimodal input.
+    """
+    import base64
+
     parts = ["INCIDENT DATA TO ANALYZE:"]
     parts.append(f"Incident ID: {state.incident_id}")
     parts.append(f"Source: {state.source_type}")
@@ -58,16 +65,33 @@ def _build_classify_prompt(state: TriageState) -> str:
         if file_refs:
             parts.append(f"File references: {', '.join(file_refs[:10])}")
 
+    image_parts: list[tuple[str, BinaryContent]] = []
+
     for att in state.multimodal_content:
         if att["type"] == "text":
             parts.append(f"Attachment ({att['filename']}):\n{att['content'][:3000]}")
-        elif att["type"] == "image":
-            parts.append(f"[Image attachment: {att['filename']} ({att.get('mime', 'image/unknown')})]")
+        elif att["type"] == "image" and att.get("data"):
+            image_parts.append((
+                f"Image attachment: {att['filename']}",
+                BinaryContent(
+                    data=base64.b64decode(att["data"]),
+                    media_type=att.get("mime", "image/png"),
+                ),
+            ))
 
     if state.code_context:
         parts.append(f"\nCODE ANALYSIS RESULTS:\n{state.code_context}")
 
-    return "\n\n".join(parts)
+    text_prompt = "\n\n".join(parts)
+
+    if not image_parts:
+        return text_prompt
+
+    content: list[str | BinaryContent] = [text_prompt]
+    for label, binary in image_parts:
+        content.append(label)
+        content.append(binary)
+    return content
 
 
 @dataclass
@@ -88,19 +112,19 @@ class ClassifyNode(BaseNode[TriageState, TriageDeps, TriageResult]):
                 state.event_id,
             )
 
-        classify_agent = Agent(
-            LLM_MODEL,
-            output_type=TriageResult,
-            instructions=system_prompt,
-        )
-
         prompt = _build_classify_prompt(state)
 
         last_error: Exception | None = None
         for attempt in range(1 + MAX_RETRIES):
+            classify_agent = Agent(
+                breaker.model,
+                output_type=TriageResult,
+                instructions=system_prompt,
+            )
             try:
                 result = await classify_agent.run(prompt)
                 state.triage_result = result.output
+                breaker.record_success()
                 logger.info(
                     "ClassifyNode completed: classification=%s, confidence=%.2f (event_id=%s)",
                     state.triage_result.classification.value,
@@ -113,6 +137,7 @@ class ClassifyNode(BaseNode[TriageState, TriageDeps, TriageResult]):
                 return GenerateOutputNode()
             except Exception as exc:
                 last_error = exc
+                breaker.record_failure()
                 logger.warning(
                     "ClassifyNode attempt %d/%d failed: %s (event_id=%s)",
                     attempt + 1,

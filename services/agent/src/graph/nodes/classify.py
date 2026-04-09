@@ -8,6 +8,7 @@ from pydantic_ai import Agent, BinaryContent
 from pydantic_graph import BaseNode, GraphRunContext
 
 from src.config import LLM_MODEL
+from src.domain.context.context_loader import load_eshop_context
 from src.domain.models import TriageDeps, TriageResult, TriageState
 from src.domain.prompts import PROMPT_INJECTION_ADDENDUM, TRIAGE_SYSTEM_PROMPT
 from src.llm_circuit_breaker import breaker
@@ -41,7 +42,8 @@ def _build_classify_prompt(state: TriageState) -> str | list:
     """
     import base64
 
-    parts = ["INCIDENT DATA TO ANALYZE:"]
+    eshop_context = load_eshop_context()
+    parts = [f"SYSTEM CONTEXT:\n{eshop_context}", "INCIDENT DATA TO ANALYZE:"]
     parts.append(f"Incident ID: {state.incident_id}")
     parts.append(f"Source: {state.source_type}")
 

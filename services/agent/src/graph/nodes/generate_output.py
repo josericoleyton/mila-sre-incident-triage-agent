@@ -68,11 +68,32 @@ def _sanitize_markdown(text: str) -> str:
     return text.strip()
 
 
+def _extract_justification(severity_assessment: str) -> str:
+    """Extract a single-sentence justification from the severity assessment text.
+
+    Strips the P-level designation prefix (e.g. 'P2 (High) — ') and returns
+    the first sentence of the remaining text.
+    """
+    text = severity_assessment or ""
+    # Take text after the first em-dash or hyphen separator
+    if " — " in text:
+        text = text.split(" — ", 1)[1].strip()
+    elif " - " in text:
+        text = text.split(" - ", 1)[1].strip()
+    # Take first sentence only
+    for sep in (".", ";"):
+        if sep in text:
+            text = text.split(sep)[0].strip()
+            break
+    return text
+
+
 def _format_ticket_body(state: TriageState, result: TriageResult) -> str:
     """Build a markdown-formatted ticket body from triage result and incident data."""
     incident = state.incident
     sections: list[str] = []
 
+    # 1. Re-escalation banner
     if state.reescalation:
         sections.append("## 🔄 Re-escalated — Reporter disagreed with original non-incident classification")
         reesc_lines = []
@@ -85,6 +106,7 @@ def _format_ticket_body(state: TriageState, result: TriageResult) -> str:
         reesc_lines.append("- **Action:** Human override accepted — escalated to engineering")
         sections.append("\n".join(reesc_lines))
 
+    # 2. Proactive Detection banner
     if state.source_type == "systemIntegration":
         sections.append(
             "## 🤖 Proactive Detection — This incident was auto-detected from production telemetry (not user-reported)"
@@ -109,18 +131,7 @@ def _format_ticket_body(state: TriageState, result: TriageResult) -> str:
             if trace_lines:
                 sections.append("## 📡 OTEL Trace Metadata\n" + "\n".join(trace_lines))
 
-    if result.file_refs:
-        file_lines = "\n".join(f"- `{ref}`" for ref in result.file_refs)
-        sections.append(f"## 📍 Affected Files\n{file_lines}")
-    else:
-        sections.append("## 📍 Affected Files\n- _No specific files identified_")
-
-    root_cause = result.root_cause or "Unable to determine root cause"
-    sections.append(f"## 🔍 Root Cause\n{root_cause}")
-
-    suggested_fix = result.suggested_fix or "Further investigation required"
-    sections.append(f"## 🛠️ Suggested Investigation\n{suggested_fix}")
-
+    # 3. Original Report
     title = incident.get("title", "N/A")
     component = incident.get("component", "N/A")
     reporter_severity_display = _sanitize_markdown(str(incident.get("severity", "N/A")))
@@ -134,35 +145,45 @@ def _format_ticket_body(state: TriageState, result: TriageResult) -> str:
         report_lines.append(f"\n```\n{description}\n```")
     sections.append("## 📋 Original Report\n" + "\n".join(report_lines))
 
-    sections.append(f"## 🔗 Tracking\nIncident ID: `{state.incident_id}`")
-
-    attachment_url = incident.get("attachment_url")
-    if attachment_url:
-        sections.append(f"## 📎 Attachments\n- {attachment_url}")
-    elif state.multimodal_content:
-        att_lines = "\n".join(f"- {att.get('filename', 'unknown')}" for att in state.multimodal_content)
-        sections.append(f"## 📎 Attachments\n{att_lines}")
+    # 4. Affected Files
+    if result.file_refs:
+        file_lines = "\n".join(f"- `{ref}`" for ref in result.file_refs)
+        sections.append(f"## 📍 Affected Files\n{file_lines}")
     else:
-        sections.append("## 📎 Attachments\n- _None_")
+        sections.append("## 📍 Affected Files\n- _No specific files identified_")
 
+    # 5. Root Cause
+    root_cause = result.root_cause or "Unable to determine root cause"
+    sections.append(f"## 🔍 Root Cause\n{root_cause}")
+
+    # 6. Suggested Investigation
+    suggested_fix = result.suggested_fix or "Further investigation required"
+    sections.append(f"## 🛠️ Suggested Investigation\n{suggested_fix}")
+
+    # 7. Triage Reasoning
     sections.append(f"## 🧠 Triage Reasoning\n{result.reasoning}")
 
+    # 8. Severity Assessment (simplified)
     severity_label = _map_severity(result.severity_assessment)
     reporter_severity_raw = incident.get("severity")
-    severity_lines = [f"- **Agent Severity:** {severity_label} — {result.severity_assessment}"]
+    justification = _extract_justification(result.severity_assessment)
+    agent_line = f"- **Agent Severity:** {severity_label}"
+    if justification:
+        agent_line += f" — {justification}"
+    severity_lines = [agent_line]
     if reporter_severity_raw and str(reporter_severity_raw).strip():
         safe_reporter = _sanitize_markdown(str(reporter_severity_raw))
         severity_lines.append(f"- **Reporter Indicated:** {safe_reporter}")
         reporter_p_level = _map_reporter_severity(str(reporter_severity_raw))
         if reporter_p_level != severity_label:
             severity_lines.append(
-                f"- **Delta:** Agent assessed {severity_label} independently from code analysis; "
-                f"reporter indicated {safe_reporter} (mapped to {reporter_p_level})."
+                f"- **Delta:** Agent assessed {severity_label}; reporter indicated {safe_reporter} (mapped to {reporter_p_level})."
             )
     else:
         severity_lines.append("- _No reporter severity provided — assessed purely from code analysis_")
     sections.append("## 📊 Severity Assessment\n" + "\n".join(severity_lines))
 
+    # 9. Confidence
     confidence_lines = [f"- **Confidence:** {result.confidence:.2f}"]
     if result.confidence < CONFIDENCE_THRESHOLD:
         confidence_lines.append(
@@ -173,14 +194,47 @@ def _format_ticket_body(state: TriageState, result: TriageResult) -> str:
             confidence_lines.append("- **Uncertainty Reasoning:** See Triage Reasoning above for details.")
     sections.append("## 🔎 Confidence\n" + "\n".join(confidence_lines))
 
+    # 10. Tracking
+    sections.append(f"## 🔗 Tracking\nIncident ID: `{state.incident_id}`")
+
+    # 11. Attachments
+    attachment_url = incident.get("attachment_url")
+    if attachment_url:
+        sections.append(f"## 📎 Attachments\n- {attachment_url}")
+    elif state.multimodal_content:
+        att_lines = "\n".join(f"- {att.get('filename', 'unknown')}" for att in state.multimodal_content)
+        sections.append(f"## 📎 Attachments\n{att_lines}")
+    else:
+        sections.append("## 📎 Attachments\n- _None_")
+
     return "\n\n".join(sections)
+
+
+def _generate_ticket_title(result: TriageResult, incident: dict) -> str:
+    """Generate a descriptive technical title from triage analysis.
+
+    Format: [Component]: [root cause summary in 10 words or less]
+    Falls back to result.reasoning[:80] when root_cause is absent.
+    Component is omitted when not available.
+    """
+    root_cause = result.root_cause
+    if root_cause:
+        summary = " ".join(root_cause.split()[:10])
+    elif result.reasoning:
+        summary = result.reasoning[:80]
+    else:
+        summary = "Untitled incident"
+    component = incident.get("component", "")
+    if component:
+        return f"{component}: {summary}"
+    return summary
 
 
 def _build_ticket_command(state: TriageState, result: TriageResult) -> dict:
     """Build the ticket.create command payload."""
     incident = state.incident
     severity = _map_severity(result.severity_assessment)
-    title = incident.get("title", "Untitled incident")
+    title = _generate_ticket_title(result, incident)
 
     labels = ["triaged-by-mila"]
     if state.reescalation:

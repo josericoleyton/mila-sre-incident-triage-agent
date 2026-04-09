@@ -2,6 +2,8 @@
 # Receives traces from eShop (via .NET Aspire OTLP exporter),
 # filters for error spans, and forwards them to the Mila API
 # as proactive incident detection webhooks.
+#
+# Pipeline: otlp receiver → filter (keep errors only) → batch → otlphttp exporter → API
 
 receivers:
   otlp:
@@ -12,13 +14,27 @@ receivers:
         endpoint: 0.0.0.0:4318
 
 processors:
+  # Drop all non-error spans — keep only spans with ERROR status code.
+  # error_mode: ignore means if OTTL evaluation fails, the span passes through.
+  filter/errors:
+    error_mode: ignore
+    traces:
+      span:
+        - 'status.code != STATUS_CODE_ERROR'
+
   batch:
     timeout: 5s
-    send_batch_size: 1024
+    send_batch_size: 128
 
 exporters:
-  # Webhook exporter to Mila API for error-based incident detection
-  # Will be configured in Story 3.5 (Proactive Incident Processing)
+  # Forward filtered error spans to Mila API as OTLP-JSON webhook.
+  # The API /api/webhooks/otel endpoint parses the OTLP resourceSpans format.
+  otlphttp/mila:
+    endpoint: http://api:8000
+    traces_endpoint: http://api:8000/api/webhooks/otel
+    encoding: json
+    compression: none
+
   debug:
     verbosity: basic
 
@@ -26,5 +42,5 @@ service:
   pipelines:
     traces:
       receivers: [otlp]
-      processors: [batch]
-      exporters: [debug]
+      processors: [filter/errors, batch]
+      exporters: [otlphttp/mila, debug]

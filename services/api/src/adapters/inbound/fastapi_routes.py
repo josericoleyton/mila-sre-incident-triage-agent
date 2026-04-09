@@ -136,6 +136,16 @@ async def otel_webhook(request: Request):
     except Exception:
         return _error_response(400, "Invalid JSON payload", "VALIDATION_ERROR")
 
+    # OTLP export format from OTEL Collector (resourceSpans envelope)
+    if "resourceSpans" in body:
+        return await _handle_otlp_traces(body)
+
+    # Simple JSON format (direct webhook / manual testing)
+    return await _handle_simple_otel(body)
+
+
+async def _handle_simple_otel(body: dict) -> dict | JSONResponse:
+    """Handle the simple JSON webhook format (Story 2.2 original)."""
     incident_id = str(uuid.uuid4())
 
     payload = {
@@ -172,6 +182,120 @@ async def otel_webhook(request: Request):
         "status": "ok",
         "data": {"incident_id": incident_id, "message": "Incident received"},
     }
+
+
+async def _handle_otlp_traces(body: dict) -> dict | JSONResponse:
+    """Parse OTLP-JSON resourceSpans from the OTEL Collector and create incidents."""
+    incidents_created: list[str] = []
+    publish_errors: list[str] = []
+
+    for resource_span in body.get("resourceSpans", []):
+        if not isinstance(resource_span, dict):
+            continue
+
+        service_name = _extract_resource_attr(
+            resource_span.get("resource", {}), "service.name"
+        )
+
+        for scope_span in resource_span.get("scopeSpans", []):
+            if not isinstance(scope_span, dict):
+                continue
+            for span in scope_span.get("spans", []):
+                if not isinstance(span, dict):
+                    continue
+
+                status = span.get("status") or {}
+                error_message = status.get("message") or span.get("name", "OTEL Error")
+                trace_id = span.get("traceId", "")
+                status_code = _safe_int(_extract_span_attr(span, "http.status_code"))
+                timestamp = _nano_to_iso(span.get("startTimeUnixNano"))
+
+                incident_id = str(uuid.uuid4())
+                payload = {
+                    "incident_id": incident_id,
+                    "title": error_message,
+                    "description": error_message,
+                    "component": service_name,
+                    "severity": None,
+                    "attachment_url": None,
+                    "reporter_slack_user_id": None,
+                    "source_type": "systemIntegration",
+                    "trace_data": {
+                        "trace_id": trace_id,
+                        "status_code": status_code,
+                        "timestamp": timestamp,
+                        "service_name": service_name,
+                    },
+                }
+
+                logger.info(
+                    "OTLP incident received incident_id=%s component=%s trace_id=%s source_type=systemIntegration",
+                    incident_id, service_name, trace_id,
+                )
+
+                try:
+                    pub = await get_publisher()
+                    event_id = await pub.publish("incidents", "incident.created", payload)
+                    logger.info("incident.created (otlp) published incident_id=%s", incident_id, extra={"event_id": event_id})
+                    incidents_created.append(incident_id)
+                except Exception:
+                    logger.exception("Failed to publish otlp incident incident_id=%s", incident_id)
+                    publish_errors.append(incident_id)
+
+    if publish_errors and not incidents_created:
+        return _error_response(503, "Service temporarily unavailable", "PUBLISH_ERROR")
+
+    if not incidents_created and not publish_errors:
+        return {"status": "ok", "data": {"message": "No error spans found"}}
+
+    result: dict = {
+        "incident_ids": incidents_created,
+        "message": f"{len(incidents_created)} incident(s) created from OTLP traces",
+    }
+    if publish_errors:
+        result["failed_count"] = len(publish_errors)
+
+    status = "partial" if publish_errors else "ok"
+    return {"status": status, "data": result}
+
+
+def _extract_resource_attr(resource: dict, key: str) -> str | None:
+    for attr in (resource.get("attributes") or []):
+        if not isinstance(attr, dict):
+            continue
+        if attr.get("key") == key:
+            val = attr.get("value") or {}
+            return val.get("stringValue") or str(val.get("intValue", "")) or None
+    return None
+
+
+def _extract_span_attr(span: dict, key: str) -> str | None:
+    for attr in (span.get("attributes") or []):
+        if not isinstance(attr, dict):
+            continue
+        if attr.get("key") == key:
+            val = attr.get("value") or {}
+            return str(val.get("stringValue") or val.get("intValue", ""))
+    return None
+
+
+def _safe_int(value: str | None) -> int | None:
+    if not value:
+        return None
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return None
+
+
+def _nano_to_iso(nano_str: str | int | None) -> str | None:
+    if nano_str is None:
+        return None
+    try:
+        ts = int(nano_str) / 1_000_000_000
+        return datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
+    except (ValueError, TypeError, OSError):
+        return None
 
 
 # --------------------------------------------------------------------------

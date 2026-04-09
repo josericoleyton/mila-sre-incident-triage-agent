@@ -36,9 +36,9 @@ services:
       - "3000:3000"
     environment:
       DATABASE_URL: ${LANGFUSE_DATABASE_URL:-postgresql://langfuse:langfuse@langfuse-db:5432/langfuse}
-      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-changeme-secret}
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET}
       NEXTAUTH_URL: ${LANGFUSE_NEXTAUTH_URL:-http://langfuse:3000}
-      SALT: ${LANGFUSE_SALT:-changeme-salt}
+      SALT: ${LANGFUSE_SALT}
     depends_on:
       langfuse-db:
         condition: service_healthy
@@ -49,8 +49,12 @@ services:
     image: otel/opentelemetry-collector-contrib:latest
     volumes:
       - ./infra/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
-    ports:
-      - "4317:4317"
+    expose:
+      - "4317"
+      - "4318"
+    depends_on:
+      api:
+        condition: service_started
     networks:
       - mila-net
 
@@ -75,6 +79,9 @@ services:
       context: ./services/agent
       dockerfile: Dockerfile
     env_file: .env
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
     depends_on:
       redis:
         condition: service_healthy

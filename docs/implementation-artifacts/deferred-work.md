@@ -28,3 +28,11 @@ Items identified during code reviews that are deferred for future stories or cro
 
 - **W1: Notification-worker missing domain-level logs** — `services/notification-worker/src/domain/services.py` is empty (Slack integration not yet implemented). Task 3 of Story 6.1 requires Slack send/success/failure logs but these are blocked by the scaffold state. Should be addressed when Slack integration is implemented (Story 5.2+).
 - **W2: No `trace_id`/`span_id` in JSON log format** — The OTEL collector is configured (`infra/otel-collector-config.yaml`) but the `StructuredJsonFormatter` emits no trace context fields. Cross-service request correlation requires OTEL SDK integration beyond Python stdlib logging. Consider adding `opentelemetry-instrumentation-logging` or manual trace context injection in a future observability story.
+
+## Deferred from: code review of story-6.2 (2026-04-08)
+
+- **W1: No version pins on OTEL deps** — `opentelemetry-sdk` and `opentelemetry-exporter-otlp-proto-http` in requirements.txt are unpinned. Pre-existing pattern — all project deps are unpinned.
+- **W2: Token usage per call untested** — Token usage attributes (`gen_ai.usage.input_tokens`, etc.) are delegated to Pydantic AI's OTEL instrumentation with no explicit test coverage.
+- **W3: Runtime Langfuse export failures silent** — `BatchSpanProcessor` silently drops failed exports with no application-level callback. No `logger.warning` at runtime when Langfuse is unreachable after init. Limitation of OTEL SDK design.
+- **W4: Dual `duration_ms` computation sites** — Both `main.py:run_pipeline` and `generate_output.py:_build_triage_completed_payload` compute `duration_ms` from the same `triage_started_at` baseline at different points in time. Langfuse trace shows a slightly larger duration than the Redis event.
+- **W5: No `depends_on: langfuse` in docker-compose** — Agent service doesn't declare Langfuse dependency. Handled by graceful degradation (setup_tracing skips if unavailable).

@@ -6,3 +6,5 @@ httpx
 pydantic
 fastapi
 slack-sdk
+opentelemetry-sdk
+opentelemetry-exporter-otlp-proto-http

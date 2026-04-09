@@ -2,3 +2,5 @@ pydantic-ai[all]
 redis[hiredis]
 httpx
 pydantic
+opentelemetry-sdk
+opentelemetry-exporter-otlp-proto-http

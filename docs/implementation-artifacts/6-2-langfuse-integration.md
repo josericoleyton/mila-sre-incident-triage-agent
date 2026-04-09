@@ -1,7 +1,7 @@
 # Story 6.2: Langfuse Integration for LLM Tracing
 
 > **Epic:** 6 — Observability & Proactive Detection
-> **Status:** ready-for-dev
+> **Status:** done
 > **Priority:** 🟡 Medium — Observability & demo quality
 > **Depends on:** Story 3.3a (Agent pipeline exists)
 > **FRs:** FR27
@@ -35,32 +35,51 @@
 
 ## Tasks / Subtasks
 
-- [ ] **1. Add Langfuse Python SDK dependency**
-  - Add `langfuse` to `services/agent/requirements.txt`
-  - Config: `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_HOST` from `config.py`
+- [x] **1. Add Langfuse Python SDK dependency**
+  - Add `opentelemetry-sdk` and `opentelemetry-exporter-otlp-proto-http` to `services/agent/requirements.txt`
+  - Config: `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_HOST` from `config.py` (already present)
 
-- [ ] **2. Configure Langfuse integration with Pydantic AI**
-  - Pydantic AI has native OpenTelemetry instrumentation
-  - Option A: Use Langfuse's OTEL integration (Langfuse as OTEL backend)
-  - Option B: Use Langfuse Python SDK decorators directly
-  - Evaluate which approach captures tool calls and structured output best
+- [x] **2. Configure Langfuse integration with Pydantic AI**
+  - Selected Option A: OTEL-based (Pydantic AI → OpenTelemetry SDK → Langfuse OTEL endpoint)
+  - `Agent.instrument_all()` auto-instruments all Pydantic AI agents globally
+  - OTLP HTTP exporter sends traces to `{LANGFUSE_HOST}/api/public/otel/v1/traces`
+  - Basic auth via base64-encoded `{public_key}:{secret_key}`
 
-- [ ] **3. Add trace metadata**
-  - After triage completes, add metadata to the Langfuse trace:
+- [x] **3. Add trace metadata**
+  - `record_triage_metadata()` creates a span with all required attributes after triage:
     - `incident_id`, `classification`, `confidence`, `severity_assessment`
     - `source_type`, `reescalation`, `forced_escalation`
     - `duration_ms`
-  - This enables filtering in the Langfuse dashboard
+  - Called from `run_pipeline()` after successful graph execution
 
-- [ ] **4. Graceful degradation**
-  - Wrap Langfuse initialization in try/except
-  - If Langfuse is unavailable: log warning, continue without tracing
-  - Triage must NEVER fail because of Langfuse
+- [x] **4. Graceful degradation**
+  - `setup_tracing()` wrapped in try/except — logs warning on failure
+  - Skips entirely when credentials missing (empty public/secret key)
+  - `record_triage_metadata()` is a no-op when tracer is None
+  - Span recording failures caught and logged as warnings
+  - Triage NEVER fails because of Langfuse
 
-- [ ] **5. Verify Langfuse Docker service**
-  - Langfuse self-hosted Docker should be defined in docker-compose.yml (Story 1.1)
-  - Verify it starts correctly and is accessible at `http://localhost:3000`
-  - Default credentials for demo access
+- [x] **5. Verify Langfuse Docker service**
+  - Confirmed `langfuse`, `langfuse-db`, and `otel-collector` in `docker-compose.yml`
+  - Langfuse accessible at `http://localhost:3000`
+  - `.env.example` has all Langfuse config variables documented
+
+### Review Findings
+
+- [x] [Review][Patch] Duplicate `init_agent()` definition — merge artifact [main.py:17]
+- [x] [Review][Patch] Metadata span orphaned from LLM traces — wrap pipeline in parent span [main.py:45]
+- [x] [Review][Patch] Test patches wrong target — should be `src.main.record_triage_metadata` [test_langfuse_integration.py:253]
+- [x] [Review][Patch] `LANGFUSE_HOST` not validated — add `.rstrip('/')` and empty check [tracing.py:44]
+- [x] [Review][Patch] Whitespace-only credentials pass guard — add `.strip()` calls [tracing.py:36]
+- [x] [Review][Patch] `setup_tracing()` not idempotent — add early return if already initialised [tracing.py:30]
+- [x] [Review][Patch] No `provider.shutdown()` on exit — add shutdown hook [main.py/tracing.py]
+- [x] [Review][Patch] `set_tracer_provider` before `Agent.instrument_all()` — reorder to avoid orphaned provider [tracing.py:50]
+- [x] [Review][Patch] `severity_assessment` uncapped — truncate before span attribute [tracing.py:97]
+- [x] [Review][Defer] No version pins on OTEL deps — deferred, pre-existing pattern
+- [x] [Review][Defer] Token usage per call untested — deferred, delegated to Pydantic AI OTEL
+- [x] [Review][Defer] Runtime Langfuse export failures silent — deferred, BatchSpanProcessor limitation
+- [x] [Review][Defer] Dual `duration_ms` computation sites — deferred, pre-existing architecture
+- [x] [Review][Defer] No `depends_on: langfuse` in docker-compose — deferred, handled by graceful degradation
 
 ## Dev Notes
 
@@ -102,6 +121,32 @@ langfuse-db:
 - Story 3.3a/3.3b: Agent pipeline that produces the traces
 - Story 1.1: Docker Compose with Langfuse service
 
-## Chat Command Log
+## Dev Agent Record
 
-*Dev agent: record your implementation commands and decisions here.*
+### Implementation Plan
+- **Approach:** OTEL-based integration (Option A from Dev Notes)
+- Pydantic AI's `Agent.instrument_all()` auto-captures all LLM calls, tool usage, and structured outputs
+- OTLP HTTP exporter sends traces directly to Langfuse's `/api/public/otel/v1/traces` endpoint
+- No Langfuse Python SDK needed — pure OpenTelemetry integration
+- Custom `record_triage_metadata()` adds triage-specific attributes as a span for dashboard filtering
+
+### Debug Log
+- All 11 new tests pass
+- 9 pre-existing test failures unrelated to this story (channel name changes, model field issues, nginx config)
+- No regressions introduced
+
+### Completion Notes
+- Created `src/tracing.py` — centralized tracing module with setup, graceful degradation, and metadata recording
+- Modified `src/main.py` — calls `setup_tracing()` at startup, calls `record_triage_metadata()` after pipeline completion
+- Added `opentelemetry-sdk` and `opentelemetry-exporter-otlp-proto-http` to both `requirements.txt` and `requirements-test.txt`
+- Created `tests/test_langfuse_integration.py` with 11 tests covering all ACs
+
+## File List
+- `services/agent/requirements.txt` (modified)
+- `services/agent/src/tracing.py` (new)
+- `services/agent/src/main.py` (modified)
+- `requirements-test.txt` (modified)
+- `tests/test_langfuse_integration.py` (new)
+
+## Change Log
+- 2026-04-08: Implemented Langfuse OTEL integration for LLM tracing (Story 6.2)

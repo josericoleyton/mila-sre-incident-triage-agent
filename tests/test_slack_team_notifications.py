@@ -292,83 +292,95 @@ class TestSlackClientAdapter:
     def test_implements_team_notifier_port(self):
         assert issubclass(SlackClient, TeamNotifier)
 
-    def test_warns_when_webhook_url_empty(self):
+    def test_warns_when_bot_token_empty(self):
         with patch.object(_slack_client_mod.logger, "warning") as mock_warn:
-            SlackClient(webhook_url="")
+            SlackClient(bot_token="")
             calls = [c[0][0] for c in mock_warn.call_args_list]
-            assert any("SLACK_WEBHOOK_URL" in msg for msg in calls)
+            assert any("SLACK_BOT_TOKEN" in msg for msg in calls)
+
+    def test_warns_when_channel_id_empty(self):
+        with patch.object(_slack_client_mod.logger, "warning") as mock_warn:
+            SlackClient(bot_token="xoxb-test", channel_id="")
+            calls = [c[0][0] for c in mock_warn.call_args_list]
+            assert any("SLACK_CHANNEL_ID" in msg for msg in calls)
 
     @pytest.mark.asyncio
     async def test_send_team_alert_success(self):
-        client = SlackClient(webhook_url="https://hooks.slack.com/test")
-        mock_response = MagicMock()
-        mock_response.status_code = 200
+        client = SlackClient(bot_token="xoxb-test", channel_id="C123")
+        mock_web = AsyncMock()
+        mock_web.chat_postMessage.return_value = {"ok": True}
+        client._web_client = mock_web
 
-        with patch.object(client._client, "send", return_value=mock_response) as mock_send:
-            result = await client.send_team_alert(
-                [{"type": "header", "text": {"type": "plain_text", "text": "test"}}],
-                "test fallback",
-            )
-            assert result is True
-            mock_send.assert_called_once()
+        result = await client.send_team_alert(
+            [{"type": "header", "text": {"type": "plain_text", "text": "test"}}],
+            "test fallback",
+        )
+        assert result is True
+        mock_web.chat_postMessage.assert_called_once_with(
+            channel="C123",
+            text="test fallback",
+            blocks=[{"type": "header", "text": {"type": "plain_text", "text": "test"}}],
+        )
 
     @pytest.mark.asyncio
     async def test_send_team_alert_retries_on_failure(self):
-        client = SlackClient(webhook_url="https://hooks.slack.com/test")
-        fail_response = MagicMock()
-        fail_response.status_code = 500
-        fail_response.body = "server_error"
-        success_response = MagicMock()
-        success_response.status_code = 200
+        client = SlackClient(bot_token="xoxb-test", channel_id="C123")
+        mock_web = AsyncMock()
+        mock_web.chat_postMessage.side_effect = [ConnectionError("fail"), {"ok": True}]
+        client._web_client = mock_web
 
-        with patch.object(
-            client._client, "send", side_effect=[fail_response, success_response]
-        ) as mock_send:
-            with patch.object(_slack_client_mod.asyncio, "sleep", new_callable=AsyncMock) as mock_sleep:
-                result = await client.send_team_alert([], "text")
-                assert result is True
-                assert mock_send.call_count == 2
-                mock_sleep.assert_called_once_with(2)
+        with patch.object(_slack_client_mod.asyncio, "sleep", new_callable=AsyncMock) as mock_sleep:
+            result = await client.send_team_alert([], "text")
+            assert result is True
+            assert mock_web.chat_postMessage.call_count == 2
+            mock_sleep.assert_called_once_with(2)
 
     @pytest.mark.asyncio
     async def test_send_team_alert_fails_after_max_retries(self):
-        client = SlackClient(webhook_url="https://hooks.slack.com/test")
-        fail_response = MagicMock()
-        fail_response.status_code = 500
-        fail_response.body = "server_error"
+        client = SlackClient(bot_token="xoxb-test", channel_id="C123")
+        mock_web = AsyncMock()
+        mock_web.chat_postMessage.side_effect = Exception("fail")
+        client._web_client = mock_web
 
-        with patch.object(
-            client._client, "send", return_value=fail_response
-        ) as mock_send:
-            with patch.object(_slack_client_mod.asyncio, "sleep", new_callable=AsyncMock):
-                result = await client.send_team_alert([], "text")
-                assert result is False
-                assert mock_send.call_count == 2
+        with patch.object(_slack_client_mod.asyncio, "sleep", new_callable=AsyncMock):
+            result = await client.send_team_alert([], "text")
+            assert result is False
+            assert mock_web.chat_postMessage.call_count == 2
 
     @pytest.mark.asyncio
     async def test_send_team_alert_retries_on_exception(self):
-        client = SlackClient(webhook_url="https://hooks.slack.com/test")
-        success_response = MagicMock()
-        success_response.status_code = 200
+        client = SlackClient(bot_token="xoxb-test", channel_id="C123")
+        mock_web = AsyncMock()
+        mock_web.chat_postMessage.side_effect = [ConnectionError("unreachable"), {"ok": True}]
+        client._web_client = mock_web
 
-        with patch.object(
-            client._client, "send", side_effect=[ConnectionError("unreachable"), success_response]
-        ):
-            with patch.object(_slack_client_mod.asyncio, "sleep", new_callable=AsyncMock) as mock_sleep:
-                result = await client.send_team_alert([], "text")
-                assert result is True
-                mock_sleep.assert_called_once_with(2)
+        with patch.object(_slack_client_mod.asyncio, "sleep", new_callable=AsyncMock) as mock_sleep:
+            result = await client.send_team_alert([], "text")
+            assert result is True
+            mock_sleep.assert_called_once_with(2)
 
     @pytest.mark.asyncio
     async def test_send_team_alert_exception_both_attempts_returns_false(self):
-        client = SlackClient(webhook_url="https://hooks.slack.com/test")
+        client = SlackClient(bot_token="xoxb-test", channel_id="C123")
+        mock_web = AsyncMock()
+        mock_web.chat_postMessage.side_effect = ConnectionError("unreachable")
+        client._web_client = mock_web
 
-        with patch.object(
-            client._client, "send", side_effect=ConnectionError("unreachable")
-        ):
-            with patch.object(_slack_client_mod.asyncio, "sleep", new_callable=AsyncMock):
-                result = await client.send_team_alert([], "text")
-                assert result is False
+        with patch.object(_slack_client_mod.asyncio, "sleep", new_callable=AsyncMock):
+            result = await client.send_team_alert([], "text")
+            assert result is False
+
+    @pytest.mark.asyncio
+    async def test_send_team_alert_fails_when_no_bot_token(self):
+        client = SlackClient(bot_token="", channel_id="C123")
+        result = await client.send_team_alert([], "text")
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_send_team_alert_fails_when_no_channel_id(self):
+        client = SlackClient(bot_token="xoxb-test", channel_id="")
+        result = await client.send_team_alert([], "text")
+        assert result is False
 
 
 # ---------------------------------------------------------------------------

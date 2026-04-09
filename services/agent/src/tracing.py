@@ -57,6 +57,7 @@ def setup_tracing() -> None:
         exporter = OTLPSpanExporter(
             endpoint=endpoint,
             headers={"Authorization": auth_header},
+            timeout=30,
         )
         provider = TracerProvider()
         provider.add_span_processor(BatchSpanProcessor(exporter))

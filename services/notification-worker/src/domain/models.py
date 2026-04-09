@@ -26,3 +26,5 @@ class Notification(BaseModel):
     reporter_slack_user_id: Optional[str] = None
     metadata: dict = {}
     confidence: Optional[float] = None
+    # reporter DM fields
+    allow_reescalation: Optional[bool] = None

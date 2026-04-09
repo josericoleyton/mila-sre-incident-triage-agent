@@ -14,3 +14,10 @@ class TeamNotifier(ABC):
     async def send_team_alert(self, blocks: list[dict], fallback_text: str, event_id: str = "unknown") -> bool:
         """Post a formatted alert to the team channel. Returns True on success."""
         ...
+
+
+class ReporterNotifier(ABC):
+    @abstractmethod
+    async def send_dm(self, blocks: list[dict], fallback_text: str, event_id: str = "unknown") -> bool:
+        """Post a DM to the reporter via webhook. Returns True on success."""
+        ...

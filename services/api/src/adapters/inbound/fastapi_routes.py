@@ -1,4 +1,5 @@
 import logging
+import json
 import os
 import uuid
 from datetime import datetime, timezone
@@ -178,20 +179,47 @@ async def otel_webhook(request: Request):
 # --------------------------------------------------------------------------
 @router.post("/api/webhooks/slack")
 async def slack_webhook(request: Request):
-    try:
-        body = await request.json()
-    except Exception:
-        return _error_response(400, "Invalid JSON payload", "VALIDATION_ERROR")
+    content_type = request.headers.get("content-type", "")
 
-    incident_id = body.get("incident_id")
-    action = body.get("action", "reescalate")
+    # Slack sends interaction payloads as application/x-www-form-urlencoded
+    if "application/x-www-form-urlencoded" in content_type:
+        form = await request.form()
+        raw_payload = form.get("payload")
+        if not raw_payload:
+            return _error_response(400, "Missing payload field", "VALIDATION_ERROR")
+        try:
+            body = json.loads(raw_payload)
+        except (json.JSONDecodeError, TypeError):
+            return _error_response(400, "Invalid JSON in payload field", "VALIDATION_ERROR")
+
+        # Extract incident_id from Slack interactive button action
+        incident_id = None
+        response_url = body.get("response_url")
+        actions = body.get("actions", [])
+        for act in actions:
+            action_id = act.get("action_id", "")
+            if action_id.startswith("reescalate_"):
+                incident_id = act.get("value")
+                break
+
+        if not incident_id:
+            return _error_response(400, "No reescalation action found", "VALIDATION_ERROR")
+
+    else:
+        # Fallback: plain JSON (for testing / internal calls)
+        try:
+            body = await request.json()
+        except Exception:
+            return _error_response(400, "Invalid JSON payload", "VALIDATION_ERROR")
+        incident_id = body.get("incident_id")
+        response_url = None
 
     if not incident_id:
         return _error_response(400, "incident_id is required", "VALIDATION_ERROR")
 
     payload = {
         "incident_id": incident_id,
-        "action": action,
+        "action": "reescalate",
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -202,5 +230,17 @@ async def slack_webhook(request: Request):
     except Exception:
         logger.exception("Failed to publish incident.reescalate event_id=N/A incident_id=%s", incident_id)
         return _error_response(503, "Service temporarily unavailable", "PUBLISH_ERROR")
+
+    # If Slack provided a response_url, update the original message
+    if response_url:
+        try:
+            import httpx
+            async with httpx.AsyncClient() as client:
+                await client.post(response_url, json={
+                    "replace_original": "true",
+                    "text": "🔄 Re-escalation in progress...",
+                })
+        except Exception:
+            logger.warning("Failed to update Slack message via response_url for incident=%s", incident_id)
 
     return {"status": "ok"}

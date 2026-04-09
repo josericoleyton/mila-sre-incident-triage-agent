@@ -97,24 +97,144 @@ async def handle_team_alert(notification: Notification, event_id: str) -> None:
         )
 
 
+def build_reporter_update_blocks(notification: Notification) -> list[dict]:
+    """Build Block Kit blocks for a reporter_update DM."""
+    message = notification.message or "Your incident report has been analyzed."
+    confidence = notification.confidence if notification.confidence is not None else "N/A"
+
+    blocks: list[dict] = [
+        {
+            "type": "header",
+            "text": {
+                "type": "plain_text",
+                "text": "📋 Incident Update",
+            },
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": message,
+            },
+        },
+        {
+            "type": "context",
+            "elements": [
+                {
+                    "type": "mrkdwn",
+                    "text": f"*Confidence:* {confidence} · *Incident:* {notification.incident_id}",
+                },
+            ],
+        },
+    ]
+
+    if notification.allow_reescalation:
+        blocks.append(
+            {
+                "type": "actions",
+                "elements": [
+                    {
+                        "type": "button",
+                        "text": {"type": "plain_text", "text": "❌ This didn't help — Re-escalate"},
+                        "style": "danger",
+                        "action_id": f"reescalate_{notification.incident_id}",
+                        "value": notification.incident_id,
+                    }
+                ],
+            }
+        )
+
+    return blocks
+
+
+def build_reporter_resolved_blocks(notification: Notification) -> list[dict]:
+    """Build Block Kit blocks for a reporter_resolved DM."""
+    title = notification.title or notification.incident_id
+
+    blocks: list[dict] = [
+        {
+            "type": "header",
+            "text": {
+                "type": "plain_text",
+                "text": "🎉 Incident Resolved",
+            },
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"Your reported incident *'{title}'* has been resolved by the engineering team. 🎉",
+            },
+        },
+    ]
+
+    if notification.ticket_url:
+        blocks.append(
+            {
+                "type": "actions",
+                "elements": [
+                    {
+                        "type": "button",
+                        "text": {"type": "plain_text", "text": "View Ticket"},
+                        "url": notification.ticket_url,
+                    }
+                ],
+            }
+        )
+
+    return blocks
+
+
 async def handle_reporter_update(notification: Notification, event_id: str) -> None:
-    """Stub: Story 5.3 implements Slack DM to reporter."""
+    """Send a Slack DM to the reporter with the triage update."""
     logger.info(
-        "Notification type=%s for incident=%s — handler not yet implemented (event_id=%s)",
+        "Building reporter DM (type=%s) for incident=%s (event_id=%s)",
         notification.type.value,
         notification.incident_id,
         event_id,
     )
+    blocks = build_reporter_update_blocks(notification)
+    fallback_text = notification.message or "Your incident report has been analyzed."
+
+    success = await _slack_client.send_dm(blocks, fallback_text, event_id=event_id)
+    if success:
+        logger.info(
+            "Reporter DM sent for incident=%s (event_id=%s)",
+            notification.incident_id,
+            event_id,
+        )
+    else:
+        logger.error(
+            "Failed to send reporter DM for incident=%s (event_id=%s)",
+            notification.incident_id,
+            event_id,
+        )
 
 
 async def handle_reporter_resolved(notification: Notification, event_id: str) -> None:
-    """Stub: Story 5.3 implements Slack DM to reporter."""
+    """Send a Slack DM to the reporter confirming resolution."""
     logger.info(
-        "Notification type=%s for incident=%s — handler not yet implemented (event_id=%s)",
-        notification.type.value,
+        "Building resolved DM for incident=%s (event_id=%s)",
         notification.incident_id,
         event_id,
     )
+    blocks = build_reporter_resolved_blocks(notification)
+    title = notification.title or notification.incident_id
+    fallback_text = f"Your reported incident '{title}' has been resolved. 🎉"
+
+    success = await _slack_client.send_dm(blocks, fallback_text, event_id=event_id)
+    if success:
+        logger.info(
+            "Resolved DM sent for incident=%s (event_id=%s)",
+            notification.incident_id,
+            event_id,
+        )
+    else:
+        logger.error(
+            "Failed to send resolved DM for incident=%s (event_id=%s)",
+            notification.incident_id,
+            event_id,
+        )
 
 
 _HANDLERS = {

@@ -1,7 +1,7 @@
 # Story 5.3: Slack Direct Message to Reporter
 
 > **Epic:** 5 — Notifications (Notification-Worker — Slack Only)
-> **Status:** ready-for-dev
+> **Status:** done
 > **Priority:** 🟠 High — Reporter experience
 > **Depends on:** Story 5.1 (Worker scaffold), Story 5.2 (Slack client)
 > **FRs:** FR22, FR24
@@ -42,34 +42,35 @@
 
 ## Tasks / Subtasks
 
-- [ ] **1. Implement reporter_update DM handler**
+- [x] **1. Implement reporter_update DM handler**
   - `domain/services.py` — `handle_reporter_update(notification)`
   - Build Slack DM content based on notification message
   - If `allow_reescalation: true`: add interactive "This didn't help" button
-  - Send via SlackClient.post_dm(user_id, blocks)
+  - Send via SlackClient.send_dm(blocks, fallback_text)
 
-- [ ] **2. Implement reporter_resolved DM handler**
+- [x] **2. Implement reporter_resolved DM handler**
   - `domain/services.py` — `handle_reporter_resolved(notification)`
   - Build message: "Your reported incident '{title}' has been resolved. 🎉"
   - Include Linear ticket link
-  - Send via SlackClient.post_dm(user_id, blocks)
+  - Send via SlackClient.send_dm(blocks, fallback_text)
 
-- [ ] **3. Build Slack interactive button for re-escalation**
+- [x] **3. Build Slack interactive button for re-escalation**
   - Block Kit button: "❌ This didn't help — Re-escalate"
   - Button `action_id`: `reescalate_{incident_id}`
   - Slack requires an Interactivity Request URL pointed at the API's `/api/webhooks/slack` endpoint
   - The `incident_id` must be encoded in the button's `value` field
 
-- [ ] **4. Handle Slack interaction webhook (API side — Story 2.2)**
-  - The API's `POST /api/webhooks/slack` endpoint (created in Story 2.2) receives interaction payloads
-  - Parse: extract `incident_id` from button value, extract action
+- [x] **4. Handle Slack interaction webhook (API side — Story 2.2)**
+  - Updated `POST /api/webhooks/slack` to parse real Slack interactive payloads (form-encoded `payload` field)
+  - Parse: extract `incident_id` from button action_id/value
   - Publish `incident.reescalate` event to `reescalations` channel
   - Return HTTP 200 immediately (Slack requires fast response)
-  - Optionally: respond with `response_url` to update original message to "🔄 Re-escalation in progress..."
+  - Responds with `response_url` to update original message to "🔄 Re-escalation in progress..."
+  - JSON fallback preserved for testing/internal calls
 
-- [ ] **5. DM to reporter uses configured user ID**
-  - `SLACK_REPORTER_USER_ID` from config
-  - Slack `chat.postMessage` with `channel` = user_id (sends DM)
+- [x] **5. DM to reporter uses webhook integration**
+  - `SLACK_DM_WEBHOOK_URL` from config (webhook approach, not Bot Token)
+  - Separate webhook client for DMs vs team alerts
 
 ## Dev Notes
 
@@ -111,6 +112,23 @@
 - Story 2.2: API /api/webhooks/slack endpoint
 - Story 4.3: Ticket-Service publishes reporter_resolved notifications
 
+## File List
+
+- `services/notification-worker/src/config.py` — Added `SLACK_DM_WEBHOOK_URL`
+- `services/notification-worker/src/domain/models.py` — Added `allow_reescalation` field
+- `services/notification-worker/src/domain/services.py` — Implemented `handle_reporter_update`, `handle_reporter_resolved`, `build_reporter_update_blocks`, `build_reporter_resolved_blocks`
+- `services/notification-worker/src/ports/outbound.py` — Added `ReporterNotifier` abstract port
+- `services/notification-worker/src/adapters/outbound/slack_client.py` — Added `send_dm()` method with DM webhook client, retry logic
+- `services/api/src/adapters/inbound/fastapi_routes.py` — Updated `/api/webhooks/slack` to parse Slack interactive payloads + response_url update
+- `tests/test_slack_dm_reporter.py` — 43 tests covering all ACs
+- `tests/test_slack_team_notifications.py` — Fixed 1 test for backwards compat (warning assertion)
+
+## Change Log
+
+- 2026-04-08: Implemented all 5 tasks. 43 new tests, 104 total pass. Webhook-based DM approach (`SLACK_DM_WEBHOOK_URL`) instead of Bot Token per user decision.
+
 ## Chat Command Log
 
-*Dev agent: record your implementation commands and decisions here.*
+- Decision: Use `SLACK_DM_WEBHOOK_URL` (Incoming Webhook) for DMs instead of Bot Token `chat.postMessage` — user requested webhook integration approach.
+- API webhook endpoint now handles both Slack form-encoded interactive payloads AND JSON fallback for testing.
+- `response_url` message update implemented for re-escalation button click feedback.

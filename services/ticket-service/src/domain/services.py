@@ -54,6 +54,12 @@ async def create_engineering_ticket(
 ) -> Optional[TicketResult]:
     priority = _map_severity_to_priority(command.severity)
 
+    logger.info(
+        "Creating Linear ticket incident_id=%s severity=%s priority=%d",
+        command.incident_id, command.severity, priority,
+        extra={"event_id": event_id},
+    )
+
     try:
         issue = await ticket_creator.create_issue(
             title=command.title,
@@ -114,6 +120,7 @@ async def create_engineering_ticket(
                 "reporter_slack_user_id": command.reporter_slack_user_id,
             },
         )
+        logger.info("Published team_alert notification incident_id=%s", command.incident_id, extra={"event_id": event_id})
     except Exception:
         logger.exception("Failed to publish team_alert notification for event_id=%s", event_id)
 
@@ -146,6 +153,8 @@ async def handle_ticket_command(
     mapping_store: Optional[TicketMappingStore] = None,
 ) -> Optional[TicketCommand]:
     event_id = envelope.get("event_id", "unknown")
+
+    logger.info("Ticket command consumed", extra={"event_id": event_id})
 
     try:
         command = TicketCommand.model_validate(envelope["payload"])

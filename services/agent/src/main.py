@@ -11,11 +11,9 @@ from src.domain.models import TriageDeps, TriageState
 from src.domain.triage_handler import handle_incident_event, handle_reescalation_event
 from src.graph.nodes.analyze_input import AnalyzeInputNode
 from src.graph.workflow import triage_graph
+from src.json_logging import setup_logging
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='{"timestamp":"%(asctime)s","level":"%(levelname)s","service":"agent","message":"%(message)s"}',
-)
+setup_logging()
 logger = logging.getLogger(__name__)
 
 

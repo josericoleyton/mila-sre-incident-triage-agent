@@ -1,10 +1,9 @@
 import asyncio
 import logging
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='{"timestamp":"%(asctime)s","level":"%(levelname)s","service":"notification-worker","message":"%(message)s"}',
-)
+from src.json_logging import setup_logging
+
+setup_logging()
 logger = logging.getLogger(__name__)
 
 

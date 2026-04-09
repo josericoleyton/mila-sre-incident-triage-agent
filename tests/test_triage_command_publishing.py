@@ -361,8 +361,8 @@ class TestBuildTriageCompletedPayload:
         assert payload["source_type"] == "userIntegration"
         assert payload["classification"] == "bug"
         assert payload["confidence"] == 0.87
-        assert isinstance(payload["reasoning_summary"], str)
-        assert len(payload["reasoning_summary"]) <= 500
+        assert isinstance(payload["reasoning_length"], int)
+        assert payload["reasoning_length"] >= 0
         assert payload["severity_assessment"] == "high — affects checkout flow but only on edge case"
         assert payload["forced_escalation"] is False
         assert payload["reescalation"] is False
@@ -394,7 +394,7 @@ class TestBuildTriageCompletedPayload:
 
         # Should not contain the incident description or title as raw input
         payload_str = str(payload)
-        assert "incident" not in payload.get("reasoning_summary", "").lower() or True  # reasoning is metadata
+        assert isinstance(payload.get("reasoning_length"), int)  # metadata only — no raw text
         # Verify no raw fields from incident
         assert "title" not in payload or payload.get("title") is None
         assert "description" not in payload
@@ -405,7 +405,7 @@ class TestBuildTriageCompletedPayload:
         long_reasoning = "A" * 600
         result = _make_bug_result(reasoning=long_reasoning)
         payload = mod._build_triage_completed_payload(state, result, duration_ms=100)
-        assert len(payload["reasoning_summary"]) == 500
+        assert payload["reasoning_length"] == 600
 
 
 # ---------------------------------------------------------------------------

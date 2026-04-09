@@ -10,11 +10,9 @@ from src.adapters.outbound.linear_client import LinearClient
 from src.adapters.outbound.redis_publisher import RedisPublisher
 from src.adapters.outbound.redis_ticket_mapping import RedisTicketMappingStore
 from src.domain.services import handle_ticket_command
+from src.json_logging import setup_logging
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='{"timestamp":"%(asctime)s","level":"%(levelname)s","service":"ticket-service","message":"%(message)s"}',
-)
+setup_logging()
 logger = logging.getLogger(__name__)
 
 

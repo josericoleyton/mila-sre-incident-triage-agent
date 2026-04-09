@@ -243,15 +243,33 @@ def _build_notification_payload(state: TriageState, result: TriageResult) -> dic
     }
 
 
+def _build_input_summary(state: TriageState) -> dict:
+    """Build metadata-only input summary — NO raw user text per NFR5."""
+    incident = state.incident
+    title = str(incident.get("title", "")) if incident.get("title") is not None else ""
+    description = incident.get("description") or ""
+    return {
+        "title_length": len(title),
+        "has_description": bool(description),
+        "component": incident.get("component"),
+        "severity": incident.get("severity"),
+        "has_attachment": bool(incident.get("attachment_url")),
+        "source_type": state.source_type,
+    }
+
+
 def _build_triage_completed_payload(state: TriageState, result: TriageResult, duration_ms: int) -> dict:
     """Build triage.completed event payload (metadata only — no raw user input per NFR5)."""
     classification = result.classification.value if hasattr(result.classification, "value") else str(result.classification)
     return {
         "incident_id": state.incident_id,
         "source_type": state.source_type,
+        "input_summary": _build_input_summary(state),
         "classification": classification,
         "confidence": result.confidence,
-        "reasoning_summary": result.reasoning[:500] if result.reasoning else "",
+        "reasoning_length": len(result.reasoning) if result.reasoning else 0,
+        "reasoning_mentions_files": bool(result.file_refs and result.reasoning and any(ref.split()[0] in result.reasoning for ref in result.file_refs)) if result.reasoning else False,
+        "files_examined": list(result.file_refs) if result.file_refs else [],
         "severity_assessment": result.severity_assessment,
         "forced_escalation": state.forced_escalation,
         "reescalation": state.reescalation,

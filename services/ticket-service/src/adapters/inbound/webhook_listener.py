@@ -48,8 +48,7 @@ def create_app(
         webhook_type = payload.get("type", "unknown")
         identifier = payload.get("id", "no-id")
         logger.info("Linear webhook received: type=%s action=%s id=%s", webhook_type, action, identifier)
-
-        # Handle resolution webhooks (Story 4.3)
+        
         if mapping_store is not None and publisher is not None:
             event_id = str(uuid.uuid4())
             logger.info("Processing webhook with event_id=%s", event_id)

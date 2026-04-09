@@ -44,6 +44,5 @@ def setup_logging(level: int = logging.INFO) -> None:
     root.setLevel(level)
     root.handlers.clear()
     root.addHandler(handler)
-    # Suppress uvicorn's own plain-text handlers to prevent duplicate lines
     for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
         logging.getLogger(name).handlers.clear()

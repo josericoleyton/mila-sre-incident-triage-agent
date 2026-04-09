@@ -112,4 +112,4 @@ class LinearClient(TicketCreator):
                         exc,
                     )
 
-        raise last_exc  # type: ignore[misc]
+        raise last_exc

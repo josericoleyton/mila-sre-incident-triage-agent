@@ -14,12 +14,9 @@ Run:
 """
 
 import base64
-import importlib.util
-import json
 import sys
-from dataclasses import dataclass
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
@@ -38,11 +35,13 @@ def _add_service_to_path(service: str):
 
 _add_service_to_path("agent")
 
-from src.adapters.outbound.github_client import GitHubClient, GITHUB_API_BASE, REPO, MAX_FILE_SIZE
+from src.adapters.outbound.github_client import GitHubClient, GITHUB_API_BASE, MAX_FILE_SIZE
 from src.domain.models import TriageDeps
 from src.graph.tools.search_code import search_code
 from src.graph.tools.read_file import read_file
 from src.ports.outbound import CodeRepository
+
+DEFAULT_REPO = "dotnet/eShop"
 
 
 # ---------------------------------------------------------------------------
@@ -67,7 +66,7 @@ def _make_content_response(content_str: str, path: str = "src/test.cs", status_c
             "content": encoded,
             "encoding": "base64",
         },
-        request=httpx.Request("GET", f"{GITHUB_API_BASE}/repos/{REPO}/contents/{path}"),
+        request=httpx.Request("GET", f"{GITHUB_API_BASE}/repos/{DEFAULT_REPO}/contents/{path}"),
     )
 
 
@@ -195,14 +194,14 @@ class TestGitHubClientSearchCode:
     async def test_search_code_uses_repo_qualifier(self):
         mock_response = _make_search_response([])
 
-        client = GitHubClient(token="test-token")
+        client = GitHubClient(token="test-token", repos=[DEFAULT_REPO])
         client._client = AsyncMock(spec=httpx.AsyncClient)
         client._client.get = AsyncMock(return_value=mock_response)
 
         await client.search_code("OrderController")
         call_args = client._client.get.call_args
         assert call_args[0][0] == "/search/code"
-        assert f"repo:{REPO}" in call_args[1]["params"]["q"]
+        assert f"repo:{DEFAULT_REPO}" in call_args[1]["params"]["q"]
 
 
 # ---------------------------------------------------------------------------
@@ -261,7 +260,7 @@ class TestGitHubClientGetFileContent:
         mock_response = httpx.Response(
             status_code=200,
             json={"name": "test.txt", "path": "test.txt", "content": encoded, "encoding": "base64"},
-            request=httpx.Request("GET", f"{GITHUB_API_BASE}/repos/{REPO}/contents/test.txt"),
+            request=httpx.Request("GET", f"{GITHUB_API_BASE}/repos/{DEFAULT_REPO}/contents/test.txt"),
         )
 
         client = GitHubClient(token="test-token")
@@ -278,7 +277,7 @@ class TestGitHubClientGetFileContent:
         mock_response = httpx.Response(
             status_code=200,
             json={"name": "big.cs", "path": "big.cs", "content": encoded, "encoding": "base64"},
-            request=httpx.Request("GET", f"{GITHUB_API_BASE}/repos/{REPO}/contents/big.cs"),
+            request=httpx.Request("GET", f"{GITHUB_API_BASE}/repos/{DEFAULT_REPO}/contents/big.cs"),
         )
 
         client = GitHubClient(token="test-token")
@@ -294,7 +293,7 @@ class TestGitHubClientGetFileContent:
         mock_response = httpx.Response(
             status_code=200,
             json={"name": "huge.bin", "path": "huge.bin", "download_url": "https://raw.githubusercontent.com/..."},
-            request=httpx.Request("GET", f"{GITHUB_API_BASE}/repos/{REPO}/contents/huge.bin"),
+            request=httpx.Request("GET", f"{GITHUB_API_BASE}/repos/{DEFAULT_REPO}/contents/huge.bin"),
         )
 
         client = GitHubClient(token="test-token")
@@ -374,7 +373,7 @@ class TestReadFileTool:
 
         result = await read_file(ctx, "src/Catalog.API/Controllers/CatalogController.cs")
         assert "CatalogController" in result
-        mock_client.get_file_content.assert_awaited_once_with("src/Catalog.API/Controllers/CatalogController.cs")
+        mock_client.get_file_content.assert_awaited_once_with("src/Catalog.API/Controllers/CatalogController.cs", repo=None)
 
     @pytest.mark.asyncio
     async def test_tool_propagates_404_message(self):

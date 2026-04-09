@@ -15,6 +15,6 @@ class CodeRepository(ABC):
         ...
 
     @abstractmethod
-    async def get_file_content(self, path: str) -> str:
-        """Fetch file content by path. Returns file content as string."""
+    async def get_file_content(self, path: str, repo: str | None = None) -> str:
+        """Fetch file content by path. Optionally specify which repo."""
         ...

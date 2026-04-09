@@ -40,11 +40,6 @@ def _error_response(status_code: int, message: str, code: str) -> JSONResponse:
         status_code=status_code,
         content={"status": "error", "message": message, "code": code},
     )
-
-
-# --------------------------------------------------------------------------
-# POST /api/incidents  — user-submitted incident
-# --------------------------------------------------------------------------
 @router.post("/api/incidents", status_code=201)
 async def create_incident(
     title: str = Form(default=""),
@@ -54,11 +49,8 @@ async def create_incident(
     reporter_email: Optional[str] = Form(None),
     file: Optional[UploadFile] = File(None),
 ):
-    # --- sanitization (before validation, so stripped text is what gets validated) ---
     title = sanitize_text(title) or ""
     description = sanitize_text(description)
-
-    # --- validation ---
     file_content_type: str | None = None
     file_size: int | None = None
 
@@ -66,7 +58,7 @@ async def create_incident(
         file_content_type = file.content_type
         contents = await file.read()
         file_size = len(contents)
-        await file.seek(0)  # reset for later save
+        await file.seek(0)
 
     file_name: str | None = file.filename if file and file.filename else None
 
@@ -77,12 +69,10 @@ async def create_incident(
 
     incident_id = str(uuid.uuid4())
 
-    # --- injection detection ---
     prompt_injection_detected = check_injection(
         {"title": title, "description": description, "component": component}, incident_id
     )
-
-    # --- file storage ---
+    
     attachment_url: str | None = None
     if file and file.filename:
         dest_dir = os.path.join(ATTACHMENTS_DIR, incident_id)
@@ -91,12 +81,11 @@ async def create_incident(
         dest_path = os.path.join(dest_dir, safe_filename)
         with open(dest_path, "wb") as f:
             if file_size is not None:
-                f.write(contents)  # already read above
+                f.write(contents)
             else:
                 f.write(await file.read())
         attachment_url = dest_path
 
-    # --- publish to Redis ---
     payload = {
         "incident_id": incident_id,
         "title": title.strip(),
@@ -127,22 +116,16 @@ async def create_incident(
         "data": {"incident_id": incident_id, "message": "Incident received"},
     }
 
-
-# --------------------------------------------------------------------------
-# POST /api/webhooks/otel  — OTEL collector error webhook
-# --------------------------------------------------------------------------
 @router.post("/api/webhooks/otel", status_code=201)
 async def otel_webhook(request: Request):
     try:
         body = await request.json()
     except Exception:
         return _error_response(400, "Invalid JSON payload", "VALIDATION_ERROR")
-
-    # OTLP export format from OTEL Collector (resourceSpans envelope)
+    
     if "resourceSpans" in body:
         return await _handle_otlp_traces(body)
-
-    # Simple JSON format (direct webhook / manual testing)
+    
     return await _handle_simple_otel(body)
 
 
@@ -298,16 +281,12 @@ def _nano_to_iso(nano_str: str | int | None) -> str | None:
         return datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
     except (ValueError, TypeError, OSError):
         return None
+    
 
-
-# --------------------------------------------------------------------------
-# POST /api/webhooks/slack  — Slack interaction callback (re-escalation)
-# --------------------------------------------------------------------------
 @router.post("/api/webhooks/slack")
 async def slack_webhook(request: Request):
     content_type = request.headers.get("content-type", "")
-
-    # Slack sends interaction payloads as application/x-www-form-urlencoded
+    
     if "application/x-www-form-urlencoded" in content_type:
         form = await request.form()
         raw_payload = form.get("payload")
@@ -317,8 +296,7 @@ async def slack_webhook(request: Request):
             body = json.loads(raw_payload)
         except (json.JSONDecodeError, TypeError):
             return _error_response(400, "Invalid JSON in payload field", "VALIDATION_ERROR")
-
-        # Extract incident_id from Slack interactive button action
+        
         incident_id = None
         response_url = body.get("response_url")
         actions = body.get("actions", [])
@@ -332,7 +310,6 @@ async def slack_webhook(request: Request):
             return _error_response(400, "No reescalation action found", "VALIDATION_ERROR")
 
     else:
-        # Fallback: plain JSON (for testing / internal calls)
         try:
             body = await request.json()
         except Exception:
@@ -356,8 +333,7 @@ async def slack_webhook(request: Request):
     except Exception:
         logger.exception("Failed to publish incident.reescalate event_id=N/A incident_id=%s", incident_id)
         return _error_response(503, "Service temporarily unavailable", "PUBLISH_ERROR")
-
-    # If Slack provided a response_url, update the original message
+    
     if response_url:
         try:
             import httpx

@@ -422,6 +422,35 @@ class TestSeverityAssessmentInTicket:
         assert "Reporter Indicated" not in body
         assert "No reporter severity" in body or "purely from code analysis" in body.lower()
 
+    def test_attachment_analysis_included_when_present(self):
+        """Ticket body includes attachment analysis when the LLM populated it."""
+        mod = _load_generate_output()
+        state = _make_state()
+        state.multimodal_content = [
+            {"type": "image", "mime": "image/png", "data": "abc", "filename": "dashboard.png"},
+            {"type": "text", "content": "ERROR 500 timeout", "filename": "app.log"},
+        ]
+        result = _make_bug_result(
+            attachment_analysis="The screenshot shows an order-management dashboard with a 500 error banner. "
+            "The log file contains repeated timeout errors on the /api/orders endpoint."
+        )
+        body = mod._format_ticket_body(state, result)
+
+        assert "## 📄 Attachment Analysis" in body
+        assert "order-management dashboard" in body
+        assert "timeout errors" in body
+        assert "dashboard.png" in body
+        assert "app.log" in body
+
+    def test_attachment_analysis_absent_when_none(self):
+        """Ticket body omits attachment analysis section when no attachments were analyzed."""
+        mod = _load_generate_output()
+        state = _make_state()
+        result = _make_bug_result()
+        body = mod._format_ticket_body(state, result)
+
+        assert "## 📄 Attachment Analysis" not in body
+
 
 # ===========================================================================
 # Integration: GenerateOutputNode with confidence & severity

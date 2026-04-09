@@ -13,6 +13,7 @@ from typing import Optional
 
 from opentelemetry import trace as otel_trace
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
@@ -58,14 +59,14 @@ def setup_tracing() -> None:
             endpoint=endpoint,
             headers={"Authorization": auth_header},
         )
-        provider = TracerProvider()
+        provider = TracerProvider(
+            resource=Resource({"service.name": "mila-agent"}),
+        )
         provider.add_span_processor(BatchSpanProcessor(exporter))
-
-        # Instrument all Pydantic AI agents globally
+        
         from pydantic_ai import Agent
         Agent.instrument_all()
-
-        # Only set the global provider after all setup succeeds
+        
         otel_trace.set_tracer_provider(provider)
         _provider = provider
         _tracer = provider.get_tracer("mila-agent")
@@ -109,13 +110,9 @@ def trace_triage_pipeline(incident_id: str):
         yield None
         return
 
-    try:
-        with tracer.start_as_current_span("triage_pipeline") as span:
-            span.set_attribute("incident_id", incident_id)
-            yield span
-    except Exception:
-        logger.warning("Failed to manage triage pipeline span", exc_info=True)
-        yield None
+    with tracer.start_as_current_span("triage_pipeline") as span:
+        span.set_attribute("incident_id", incident_id)
+        yield span
 
 
 def record_triage_metadata(

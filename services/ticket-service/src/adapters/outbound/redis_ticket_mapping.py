@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 MAPPING_KEY_PREFIX = "ticket-mapping:"
 RESOLVED_SET_KEY = "resolved-tickets"
-MAPPING_TTL_SECONDS = 90 * 24 * 60 * 60  # 90 days
+MAPPING_TTL_SECONDS = 90 * 24 * 60 * 60
 
 
 class RedisTicketMappingStore(TicketMappingStore):

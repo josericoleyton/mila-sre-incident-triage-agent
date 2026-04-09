@@ -16,7 +16,6 @@ class Notification(BaseModel):
     message: Optional[str] = None
     slack_channel: Optional[str] = None
     reporter_email: Optional[str] = None
-    # team_alert fields
     title: Optional[str] = None
     ticket_url: Optional[str] = None
     severity: Optional[str] = None
@@ -25,5 +24,4 @@ class Notification(BaseModel):
     source_type: Optional[str] = None
     metadata: dict = {}
     confidence: Optional[float] = None
-    # reporter DM fields
     allow_reescalation: Optional[bool] = None

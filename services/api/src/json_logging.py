@@ -42,9 +42,7 @@ def setup_logging(level: int = logging.INFO) -> None:
     handler.setFormatter(StructuredJsonFormatter())
     root = logging.getLogger()
     root.setLevel(level)
-    # Remove any existing handlers to avoid duplicate output
     root.handlers.clear()
     root.addHandler(handler)
-    # Suppress uvicorn's own plain-text handlers to prevent duplicate lines
     for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
         logging.getLogger(name).handlers.clear()

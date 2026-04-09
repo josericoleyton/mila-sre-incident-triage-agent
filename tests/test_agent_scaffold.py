@@ -475,26 +475,6 @@ class TestRedisConsumerMultiChannel:
 # ---------------------------------------------------------------------------
 
 class TestAgentInit:
-    def test_init_agent_returns_agent_instance(self):
-        """init_agent creates a Pydantic AI Agent with the configured model."""
-        # We import main to get init_agent, but patch the Agent constructor
-        main_path = _PROJECT_ROOT / "services" / "agent" / "src" / "main.py"
-        spec = importlib.util.spec_from_file_location("agent_main_31", main_path)
-        mod = importlib.util.module_from_spec(spec)
-
-        with patch.dict(sys.modules, {"pydantic_ai": MagicMock()}):
-            mock_agent_cls = MagicMock()
-            mock_agent_instance = MagicMock()
-            mock_agent_cls.return_value = mock_agent_instance
-
-            with patch.dict(sys.modules):
-                import pydantic_ai
-                pydantic_ai.Agent = mock_agent_cls
-                spec.loader.exec_module(mod)
-
-            result = mod.init_agent()
-            assert result is not None
-
     @pytest.mark.asyncio
     async def test_run_pipeline_stub_does_not_crash(self):
         """The pipeline should accept state and deps without error."""
@@ -508,7 +488,11 @@ class TestAgentInit:
 
         mock_deps = MagicMock()
 
-        with patch.dict(sys.modules, {"pydantic_ai": MagicMock()}):
+        mock_pydantic = MagicMock()
+        with patch.dict(sys.modules, {
+            "pydantic_ai": mock_pydantic,
+            "pydantic_ai.settings": mock_pydantic.settings,
+        }):
             spec.loader.exec_module(mod)
             with patch.object(mod, "triage_graph", create=True) as mock_graph:
                 mock_graph.run = AsyncMock()

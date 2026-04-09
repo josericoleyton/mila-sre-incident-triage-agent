@@ -3,11 +3,10 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
-from pydantic_ai import Agent, RunContext
+from pydantic_ai import Agent, UsageLimits
 from pydantic_ai.settings import ModelSettings
 from pydantic_graph import BaseNode, GraphRunContext
 
-from src.config import LLM_MODEL
 from src.domain.models import TriageDeps, TriageResult, TriageState
 from src.graph.tools.read_file import read_file
 from src.graph.tools.search_code import search_code
@@ -15,7 +14,7 @@ from src.llm_circuit_breaker import breaker
 
 logger = logging.getLogger(__name__)
 
-MAX_TOOL_CALLS = 10  # prevent unbounded LLM loops on persistent tool failures
+MAX_TOOL_CALLS = 5 
 
 SEARCH_SYSTEM_PROMPT = """\
 You are a code analysis assistant investigating an incident in the eShop (.NET) codebase.
@@ -101,6 +100,7 @@ class SearchCodeNode(BaseNode[TriageState, TriageDeps, TriageResult]):
                 prompt,
                 deps=ctx.deps,
                 model_settings=ModelSettings(max_tokens=2048),
+                usage_limits=UsageLimits(request_limit=MAX_TOOL_CALLS),
             )
             state.code_context = result.output
             breaker.record_success()

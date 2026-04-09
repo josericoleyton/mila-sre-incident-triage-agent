@@ -91,8 +91,6 @@ async def create_engineering_ticket(
         result.incident_id,
         event_id,
     )
-
-    # Persist ticket-incident mapping for resolution correlation (Story 4.3)
     if mapping_store is not None:
         try:
             await mapping_store.save_mapping(
@@ -104,8 +102,7 @@ async def create_engineering_ticket(
             )
         except Exception:
             logger.exception("Failed to save ticket mapping for event_id=%s", event_id)
-
-    # Publish team notification
+            
     try:
         await publisher.publish(
             "notifications",
@@ -124,7 +121,6 @@ async def create_engineering_ticket(
     except Exception:
         logger.exception("Failed to publish team_alert notification for event_id=%s", event_id)
 
-    # Publish reporter notification if reporter exists
     if command.reporter_email:
         try:
             await publisher.publish(
@@ -236,9 +232,7 @@ async def handle_resolution_webhook(
         linear_ticket_id,
         event_id,
     )
-
-    # Correlate ticket to incident (before idempotency gate so we don't
-    # burn the resolved flag for non-tracked tickets)
+    
     mapping = await mapping_store.get_mapping(linear_ticket_id)
     if mapping is None:
         logger.info(
@@ -247,8 +241,7 @@ async def handle_resolution_webhook(
             event_id,
         )
         return False
-
-    # Idempotency: check if already resolved
+    
     is_new_resolution = await mapping_store.mark_resolved(linear_ticket_id)
     if not is_new_resolution:
         logger.info(
@@ -261,7 +254,6 @@ async def handle_resolution_webhook(
     incident_id = mapping["incident_id"]
     reporter_email = mapping.get("reporter_email")
 
-    # Skip notification for proactive incidents (no reporter)
     if not reporter_email:
         logger.info(
             "No reporter for incident_id=%s (proactive incident) — skipping notification (event_id=%s)",
@@ -269,8 +261,7 @@ async def handle_resolution_webhook(
             event_id,
         )
         return False
-
-    # Publish reporter_resolved notification
+    
     message = f"Your reported incident '{title}' has been resolved by the engineering team."
     try:
         await publisher.publish(

@@ -5,6 +5,9 @@ LLM_MODEL: str = os.environ.get("LLM_MODEL", "openrouter:google/gemma-4")
 LLM_FALLBACK_MODEL: str = os.environ.get("LLM_FALLBACK_MODEL", "openrouter:google/gemini-2.5-flash")
 REDIS_URL: str = os.environ.get("REDIS_URL", "redis://redis:6379")
 GITHUB_TOKEN: str = os.environ.get("GITHUB_TOKEN", "")
+GITHUB_REPOS: list[str] = [
+    r.strip() for r in os.environ.get("GITHUB_REPOS", "dotnet/eShop").split(",") if r.strip()
+]
 LANGFUSE_PUBLIC_KEY: str = os.environ.get("LANGFUSE_PUBLIC_KEY", "")
 LANGFUSE_SECRET_KEY: str = os.environ.get("LANGFUSE_SECRET_KEY", "")
 LANGFUSE_HOST: str = os.environ.get("LANGFUSE_HOST", "http://langfuse:3000")

@@ -39,6 +39,7 @@ class TriageResult(BaseModel):
     suggested_fix: Optional[str] = None
     resolution_explanation: Optional[str] = None
     severity_assessment: str = ""
+    attachment_analysis: Optional[str] = None
 
 
 @dataclass

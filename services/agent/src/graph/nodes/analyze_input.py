@@ -71,15 +71,14 @@ def _extract_signals(incident: dict, attachments: list[dict] | None = None) -> d
     }
 
 
-MAX_ATTACHMENT_BYTES = 5_000_000  # 5 MB per file
-MAX_TOTAL_BYTES = 20_000_000  # 20 MB total across all attachments
+MAX_ATTACHMENT_BYTES = 5_000_000 
+MAX_TOTAL_BYTES = 20_000_000 
 
 
 def _process_attachments(incident_id: str, attachment_url: str | None, event_id: str = "") -> list[dict]:
     """Process attachments: images → multimodal input, logs/text → text content."""
     multimodal: list[dict] = []
 
-    # Prevent path traversal via crafted incident_id
     root = os.path.realpath("/shared/attachments")
     attachments_dir = os.path.realpath(os.path.join(root, incident_id))
     if not attachments_dir.startswith(root + os.sep):

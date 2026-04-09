@@ -61,6 +61,15 @@ OUTPUT: Produce a TriageResult with all required fields.
 For bugs: include root_cause and suggested_fix.
 For non-incidents: include resolution_explanation.
 Always include: classification, confidence (0.0-1.0), reasoning (chain-of-thought), file_refs, severity_assessment.
+
+ATTACHMENT ANALYSIS:
+If the incident includes attached files (images, logs, text files), you MUST populate the
+attachment_analysis field with a clear summary of what those attachments contain and how they
+relate to the incident. For example:
+- For screenshots: describe what the dashboard/UI/error dialog shows and any visible error messages.
+- For log files: summarize the key errors, warnings, or anomalies found.
+- For config/data files: note any misconfigurations or unusual values observed.
+If no attachments are present, leave attachment_analysis as null.
 """.format(classification_criteria=CLASSIFICATION_CRITERIA)
 
 PROMPT_INJECTION_ADDENDUM = """\

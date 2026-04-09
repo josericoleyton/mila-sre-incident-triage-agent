@@ -2,12 +2,9 @@ import asyncio
 import logging
 import time
 
-from pydantic_ai import Agent
-
 from src.adapters.inbound.redis_consumer import RedisConsumer
 from src.adapters.outbound.github_client import GitHubClient
 from src.adapters.outbound.redis_publisher import RedisPublisher
-from src.config import LLM_MODEL
 from src.domain.models import TriageDeps, TriageState
 from src.domain.triage_handler import handle_incident_event, handle_reescalation_event
 from src.graph.nodes.analyze_input import AnalyzeInputNode
@@ -17,17 +14,6 @@ from src.tracing import record_triage_metadata, setup_tracing, shutdown_tracing,
 
 setup_logging()
 logger = logging.getLogger(__name__)
-
-
-def init_agent() -> Agent:
-    """Initialize the Pydantic AI Agent with the configured LLM model."""
-    try:
-        agent = Agent(LLM_MODEL)
-        logger.info("Agent initialized with model: %s", LLM_MODEL)
-        return agent
-    except Exception as exc:
-        logger.error("Failed to initialize agent with model %s: %s", LLM_MODEL, exc)
-        raise
 
 
 async def run_pipeline(state: TriageState, deps: TriageDeps) -> None:
@@ -42,8 +28,7 @@ async def run_pipeline(state: TriageState, deps: TriageDeps) -> None:
                 result.output.classification.value if result.output else "none",
                 state.event_id,
             )
-
-            # Record triage result metadata to Langfuse
+            
             if result.output and state.triage_started_at is not None:
                 duration_ms = int((time.monotonic() - state.triage_started_at) * 1000)
                 classification = result.output.classification.value if hasattr(result.output.classification, "value") else str(result.output.classification)
@@ -58,7 +43,12 @@ async def run_pipeline(state: TriageState, deps: TriageDeps) -> None:
                     forced_escalation=state.forced_escalation,
                     duration_ms=duration_ms,
                 )
+            elif span is not None:
+                span.set_attribute("status", "no_output")
+                logger.warning("Triage pipeline produced no output for incident %s (event_id=%s)", state.incident_id, state.event_id)
         except Exception:
+            if span is not None:
+                span.set_attribute("status", "error")
             logger.exception("Triage pipeline failed for incident %s (event_id=%s)", state.incident_id, state.event_id)
             try:
                 await deps.publisher.publish(
@@ -79,8 +69,6 @@ async def main():
     logger.info("Service agent started")
 
     setup_tracing()
-
-    agent = init_agent()
 
     publisher = RedisPublisher()
     consumer = RedisConsumer()

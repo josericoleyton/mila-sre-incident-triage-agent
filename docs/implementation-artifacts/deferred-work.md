@@ -19,3 +19,7 @@ Items identified during code reviews that are deferred for future stories or cro
 - **W4: description triple-backtick injection in _format_ticket_body** — User-supplied `description` field is fenced in backticks but the description itself is not sanitized, unlike `error_message` which strips triple backticks. Pre-existing from Story 3.4.
 - **W5: attachment_url markdown injection** — Raw URL is interpolated into markdown list item with no sanitization. Could enable link injection. Pre-existing.
 - **W6: Negative duration_ms if monotonic clock state is stale** — If `triage_started_at` exceeds current `time.monotonic()`, `duration_ms` becomes negative. No `max(0, ...)` guard. Pre-existing edge case.
+
+## Deferred from: code review of story-3.8 (2026-04-08)
+
+- **W1: Empty `slack_user_id` fallback on re-escalation notification** — `state.incident.get("reporter_slack_user_id", "")` defaults to empty string with no validation. Pre-existing pattern shared by all notification payloads (see story-3.6 W2).

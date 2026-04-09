@@ -76,20 +76,26 @@ async def handle_reescalation_event(
         await _publish_error(publisher, event_id, str(exc), "reescalations")
         return None
 
+    reporter_feedback = incident.reporter_feedback or ""
+    original_classification = incident.original_classification or ""
+
     state = TriageState(
         incident_id=incident.incident_id,
         source_type=incident.source_type,
         event_id=event_id,
         incident=incident.model_dump(),
         reescalation=True,
+        reporter_feedback=reporter_feedback,
+        original_classification=original_classification,
         prompt_injection_detected=incident.prompt_injection_detected,
         triage_started_at=time.monotonic(),
     )
 
     logger.info(
-        "Triage started for incident %s, source: %s, reescalation: True (event_id=%s)",
+        "Triage started for incident %s, source: %s, reescalation: True, has_feedback: %s (event_id=%s)",
         state.incident_id,
         state.source_type,
+        bool(reporter_feedback),
         event_id,
     )
 

@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 def verify_linear_signature(body: bytes, signature: str, secret: str) -> bool:
     expected = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+    logger.info("HMAC debug — expected=%s received=%s secret_len=%d body_len=%d", expected[:16], signature[:16], len(secret), len(body))
     return hmac.compare_digest(expected, signature)
 
 
@@ -28,7 +29,7 @@ def create_app(
     @app.post("/webhooks/linear")
     async def handle_linear_webhook(request: Request) -> JSONResponse:
         body = await request.body()
-        signature = request.headers.get("X-Linear-Signature", "")
+        signature = request.headers.get("linear-signature", "")
 
         if not signature or not verify_linear_signature(body, signature, config.LINEAR_WEBHOOK_SECRET):
             logger.warning("Invalid Linear webhook signature")

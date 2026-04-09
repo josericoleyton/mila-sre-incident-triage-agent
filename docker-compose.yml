@@ -102,6 +102,18 @@ services:
     networks:
       - mila-net
 
+  ngrok:
+    image: ngrok/ngrok:latest
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN}
+    command: http ticket-service:8002 --log stdout
+    ports:
+      - "4040:4040"
+    depends_on:
+      - ticket-service
+    networks:
+      - mila-net
+
   notification-worker:
     build:
       context: ./services/notification-worker

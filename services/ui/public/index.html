@@ -210,7 +210,7 @@
             <p class="section-label">Reporter</p>
             <div class="field">
               <span class="flabel">Email</span>
-              <input type="email" id="f-email" placeholder="ana.botero@company.com" oninput="updateProgress()"/>
+              <input type="email" id="f-email" placeholder="ana.botero@company.com" required oninput="updateProgress()"/>
             </div>
           </div>
 
@@ -355,6 +355,12 @@ async function submitForm() {
   var title = document.getElementById('f-title').value.trim();
   if (!title) {
     showError('Title is required');
+    return;
+  }
+
+  var email = document.getElementById('f-email').value.trim();
+  if (!email) {
+    showError('Reporter email is required');
     return;
   }
 

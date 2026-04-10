@@ -103,6 +103,12 @@ async def create_engineering_ticket(
         except Exception:
             logger.exception("Failed to save ticket mapping for event_id=%s", event_id)
             
+    # Extract short_title by stripping severity prefix from Linear title
+    short_title = command.title
+    severity_prefix = f"[{command.severity}] "
+    if short_title.startswith(severity_prefix):
+        short_title = short_title[len(severity_prefix):]
+
     try:
         await publisher.publish(
             "notifications",
@@ -111,10 +117,12 @@ async def create_engineering_ticket(
                 "type": "team_alert",
                 "ticket_url": result.url,
                 "severity": command.severity,
-                "component": command.labels[0] if command.labels else "unknown",
-                "summary": command.title,
+                "component": command.component or "Unknown",
+                "title": short_title,
+                "summary": command.root_cause_summary or short_title,
                 "incident_id": command.incident_id,
                 "reporter_email": command.reporter_email,
+                "source_type": command.source_type,
             },
         )
         logger.info("Published team_alert notification incident_id=%s", command.incident_id, extra={"event_id": event_id})
@@ -130,10 +138,12 @@ async def create_engineering_ticket(
                     "type": "reporter_update",
                     "reporter_email": command.reporter_email,
                     "message": (
-                        f"Your incident report has been received and escalated to the engineering team. "
-                        f"Tracking ID: {command.incident_id}"
+                        "Your incident has been escalated to the engineering team. "
+                        "Mila analyzed your report and identified a root cause. "
+                        "The team has been notified and is working on it."
                     ),
                     "incident_id": command.incident_id,
+                    "title": short_title,
                 },
             )
         except Exception:
@@ -271,6 +281,7 @@ async def handle_resolution_webhook(
                 "type": "reporter_resolved",
                 "reporter_email": reporter_email,
                 "message": message,
+                "title": title,
                 "incident_id": incident_id,
                 "ticket_url": ticket_url,
             },

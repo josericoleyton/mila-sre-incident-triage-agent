@@ -238,8 +238,7 @@ class TestCreateEngineeringTicket:
         payload = team_alert_calls[0][0][2]
         assert payload["ticket_url"] == "https://linear.app/team/issue/ENG-42"
         assert payload["severity"] == "P2"
-        assert payload["component"] == "ordering"
-        assert payload["summary"] == "[P2] NullReferenceException in OrderController.cs"
+        assert payload["title"] == "NullReferenceException in OrderController.cs"
         assert payload["incident_id"] == "inc-200"
 
     @pytest.mark.asyncio
@@ -257,8 +256,8 @@ class TestCreateEngineeringTicket:
         assert len(reporter_calls) == 1
         payload = reporter_calls[0][0][2]
         assert payload["reporter_email"] == "reporter99@example.com"
-        assert "inc-200" in payload["message"]
         assert "escalated" in payload["message"]
+        assert "engineering team" in payload["message"]
 
     @pytest.mark.asyncio
     async def test_no_reporter_notification_when_reporter_is_none(self):
@@ -321,7 +320,7 @@ class TestCreateEngineeringTicket:
 
         calls = publisher.publish.call_args_list
         team_alert_calls = [c for c in calls if c[0][0] == "notifications" and c[0][2].get("type") == "team_alert"]
-        assert team_alert_calls[0][0][2]["component"] == "unknown"
+        assert team_alert_calls[0][0][2]["component"] == "Unknown"
 
     @pytest.mark.asyncio
     async def test_notification_failure_still_returns_result(self):

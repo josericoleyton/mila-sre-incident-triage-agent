@@ -11,6 +11,10 @@ class TicketCommand(BaseModel):
     labels: list[str] = []
     reporter_email: Optional[str] = None
     incident_id: str
+    component: Optional[str] = None
+    confidence: Optional[float] = None
+    source_type: Optional[str] = None
+    root_cause_summary: Optional[str] = None
 
 
 class TicketResult(BaseModel):

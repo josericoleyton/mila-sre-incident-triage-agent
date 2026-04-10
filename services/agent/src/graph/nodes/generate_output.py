@@ -179,21 +179,10 @@ def _format_ticket_body(state: TriageState, result: TriageResult) -> str:
         severity_lines.append("- _No reporter severity provided — assessed purely from code analysis_")
     sections.append("## 📊 Severity Assessment\n" + "\n".join(severity_lines))
 
-    # 9. Confidence
-    confidence_lines = [f"- **Confidence:** {result.confidence:.2f}"]
-    if result.confidence < CONFIDENCE_THRESHOLD:
-        confidence_lines.append(
-            f"- 🟡 **Low Confidence** — Agent confidence: {result.confidence:.2f}. "
-            "This classification may need manual review."
-        )
-        if result.reasoning:
-            confidence_lines.append("- **Uncertainty Reasoning:** See Triage Reasoning above for details.")
-    sections.append("## 🔎 Confidence\n" + "\n".join(confidence_lines))
 
-    # 10. Tracking
     sections.append(f"## 🔗 Tracking\nIncident ID: `{state.incident_id}`")
 
-    # 11. Attachments
+
     attachment_url = incident.get("attachment_url")
     if attachment_url:
         sections.append(f"## 📎 Attachments\n- {attachment_url}")
@@ -209,21 +198,35 @@ def _format_ticket_body(state: TriageState, result: TriageResult) -> str:
 def _generate_ticket_title(result: TriageResult, incident: dict) -> str:
     """Generate a descriptive technical title from triage analysis.
 
-    Format: [Component]: [root cause summary in 10 words or less]
+    Format: [Component]: [root cause summary up to 80 chars]
+    Truncates at the nearest word boundary to avoid cutting words.
     Falls back to result.reasoning[:80] when root_cause is absent.
     Component is omitted when not available.
     """
     root_cause = result.root_cause
     if root_cause:
-        summary = " ".join(root_cause.split()[:10])
+        summary = _truncate_at_word_boundary(root_cause, 80)
     elif result.reasoning:
-        summary = result.reasoning[:80]
+        summary = _truncate_at_word_boundary(result.reasoning, 80)
     else:
         summary = "Untitled incident"
     component = incident.get("component", "")
     if component:
         return f"{component}: {summary}"
     return summary
+
+
+def _truncate_at_word_boundary(text: str, max_len: int) -> str:
+    """Truncate text at a word boundary without exceeding max_len."""
+    text = text.strip()
+    if len(text) <= max_len:
+        return text
+    truncated = text[:max_len]
+    # Cut at last space to avoid splitting a word
+    last_space = truncated.rfind(" ")
+    if last_space > 0:
+        truncated = truncated[:last_space]
+    return truncated
 
 
 def _build_ticket_command(state: TriageState, result: TriageResult) -> dict:
@@ -250,6 +253,9 @@ def _build_ticket_command(state: TriageState, result: TriageResult) -> dict:
         "reporter_email": incident.get("reporter_email", ""),
         "incident_id": state.incident_id,
         "event_id": state.event_id,
+        "component": incident.get("component", ""),
+        "source_type": state.source_type,
+        "root_cause_summary": (result.root_cause or "")[:300],
     }
 
 
@@ -287,7 +293,6 @@ def _build_notification_payload(state: TriageState, result: TriageResult) -> dic
         "reporter_email": state.incident.get("reporter_email", ""),
         "message": message,
         "incident_id": state.incident_id,
-        "confidence": result.confidence,
         "allow_reescalation": True,
         "event_id": state.event_id,
     }

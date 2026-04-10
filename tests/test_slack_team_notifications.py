@@ -177,23 +177,20 @@ class TestNotificationModelNewFields:
 # ---------------------------------------------------------------------------
 
 class TestBuildTeamAlertBlocks:
-    def test_header_contains_severity_emoji_and_title(self):
+    def test_header_contains_severity_emoji_component_and_title(self):
         n = Notification(**_team_alert_payload())
         blocks = build_team_alert_blocks(n)
         header = blocks[0]
         assert header["type"] == "header"
-        assert "🔴 [P1]" in header["text"]["text"]
-        assert "NullReferenceException in OrderController.cs" in header["text"]["text"]
+        assert "🔴 [P1] Ordering: NullReferenceException in OrderController.cs" == header["text"]["text"]
 
-    def test_fields_section_has_component_confidence_source(self):
+    def test_fields_section_has_reporter(self):
         n = Notification(**_team_alert_payload())
         blocks = build_team_alert_blocks(n)
         fields = blocks[1]
         assert fields["type"] == "section"
         field_texts = [f["text"] for f in fields["fields"]]
-        assert any("Ordering" in t for t in field_texts)
-        assert any("0.87" in t for t in field_texts)
-        assert any("User-reported" in t for t in field_texts)
+        assert any("Reporter: user@example.com" in t for t in field_texts)
 
     def test_root_cause_section(self):
         n = Notification(**_team_alert_payload())
@@ -243,45 +240,76 @@ class TestBuildTeamAlertBlocks:
         blocks = build_team_alert_blocks(n)
         assert "⚪" in blocks[0]["text"]["text"]
 
-    def test_proactive_source_type(self):
-        n = Notification(**_team_alert_payload(source_type="proactive"))
+    def test_p1_severity_format(self):
+        n = Notification(**_team_alert_payload(severity="P1"))
+        blocks = build_team_alert_blocks(n)
+        assert "🔴 [P1]" in blocks[0]["text"]["text"]
+
+    def test_p2_severity_format(self):
+        n = Notification(**_team_alert_payload(severity="P2"))
+        blocks = build_team_alert_blocks(n)
+        assert "🟠 [P2]" in blocks[0]["text"]["text"]
+
+    def test_proactive_source_type_shows_otel_detection(self):
+        n = Notification(**_team_alert_payload(source_type="systemIntegration"))
         blocks = build_team_alert_blocks(n)
         field_texts = [f["text"] for f in blocks[1]["fields"]]
-        assert any("Proactive OTEL detection" in t for t in field_texts)
+        assert any("Detected by Mila via OpenTelemetry" in t for t in field_texts)
 
-    def test_user_reported_source_type(self):
+    def test_user_reported_source_type_shows_reporter_email(self):
         n = Notification(**_team_alert_payload(source_type="user_reported"))
         blocks = build_team_alert_blocks(n)
         field_texts = [f["text"] for f in blocks[1]["fields"]]
-        assert any("User-reported" in t for t in field_texts)
+        assert any("Reporter: user@example.com" in t for t in field_texts)
 
-    def test_none_source_type_defaults_to_user_reported(self):
+    def test_none_source_type_defaults_to_reporter(self):
         n = Notification(**_team_alert_payload(source_type=None))
         blocks = build_team_alert_blocks(n)
         field_texts = [f["text"] for f in blocks[1]["fields"]]
-        assert any("User-reported" in t for t in field_texts)
+        assert any("Reporter:" in t for t in field_texts)
 
     def test_missing_title_falls_back_to_incident_id(self):
         n = Notification(**_team_alert_payload(title=None))
         blocks = build_team_alert_blocks(n)
         assert "inc-100" in blocks[0]["text"]["text"]
 
-    def test_missing_component_shows_unknown(self):
+    def test_missing_component_shows_unknown_in_header(self):
         n = Notification(**_team_alert_payload(component=None))
         blocks = build_team_alert_blocks(n)
-        field_texts = [f["text"] for f in blocks[1]["fields"]]
-        assert any("Unknown" in t for t in field_texts)
+        assert "Unknown:" in blocks[0]["text"]["text"]
 
     def test_missing_summary_shows_fallback(self):
         n = Notification(**_team_alert_payload(summary=None))
         blocks = build_team_alert_blocks(n)
         assert "No summary available" in blocks[2]["text"]["text"]
 
-    def test_missing_confidence_shows_na(self):
+    def test_confidence_hidden_when_70_or_below(self):
+        n = Notification(**_team_alert_payload(confidence=0.70))
+        blocks = build_team_alert_blocks(n)
+        field_texts = [f["text"] for f in blocks[1]["fields"]]
+        assert not any("Confidence" in t for t in field_texts)
+
+    def test_confidence_not_shown_in_fields(self):
+        n = Notification(**_team_alert_payload(confidence=0.87))
+        blocks = build_team_alert_blocks(n)
+        field_texts = [f["text"] for f in blocks[1]["fields"]]
+        assert not any("Confidence" in t for t in field_texts)
+
+    def test_confidence_hidden_when_none(self):
         n = Notification(**_team_alert_payload(confidence=None))
         blocks = build_team_alert_blocks(n)
         field_texts = [f["text"] for f in blocks[1]["fields"]]
-        assert any("N/A" in t for t in field_texts)
+        assert not any("Confidence" in t for t in field_texts)
+
+    def test_root_cause_truncated_at_300_chars(self):
+        long_summary = "x" * 400
+        n = Notification(**_team_alert_payload(summary=long_summary))
+        blocks = build_team_alert_blocks(n)
+        root_cause_text = blocks[2]["text"]["text"]
+        # "*Root Cause:* " prefix + 300 chars + "..."
+        assert root_cause_text.endswith("...")
+        assert "x" * 300 in root_cause_text
+        assert "x" * 301 not in root_cause_text
 
 
 # ---------------------------------------------------------------------------
@@ -400,7 +428,7 @@ class TestHandleTeamAlert:
             mock_notifier.assert_called_once()
             blocks, fallback = mock_notifier.call_args[0]
             assert len(blocks) == 4  # header, fields, root_cause, actions
-            assert "🔴 [P1]" in fallback
+            assert "🔴 [P1] Ordering:" in fallback
     @pytest.mark.asyncio
     async def test_passes_event_id_to_adapter(self):
         n = Notification(**_team_alert_payload())

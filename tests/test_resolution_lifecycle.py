@@ -321,7 +321,7 @@ class TestReporterResolvedNotification:
         assert notification_payload["reporter_email"] == "user@example.com"
         assert notification_payload["incident_id"] == "inc-200"
         assert notification_payload["ticket_url"] == "https://linear.app/team/issue/ENG-42"
-        assert "[P2] NullRef in OrderController" in notification_payload["message"]
+        assert notification_payload["title"] == "[P2] NullRef in OrderController"
         assert "resolved" in notification_payload["message"]
 
     @pytest.mark.asyncio

@@ -54,8 +54,45 @@ def _otlp_payload(
     status_message="Internal Server Error",
     http_status_code=500,
     start_time_nano="1712577000000000000",
+    exception_type=None,
+    exception_message=None,
+    exception_stacktrace=None,
+    http_method=None,
+    http_url=None,
 ):
     """Build a minimal OTLP-JSON resourceSpans payload."""
+    attributes = [
+        {"key": "http.status_code", "value": {"intValue": str(http_status_code)}},
+    ]
+    if http_method:
+        attributes.append({"key": "http.method", "value": {"stringValue": http_method}})
+    if http_url:
+        attributes.append({"key": "url.full", "value": {"stringValue": http_url}})
+
+    span = {
+        "traceId": trace_id,
+        "spanId": "span001",
+        "name": span_name,
+        "kind": 2,
+        "startTimeUnixNano": start_time_nano,
+        "endTimeUnixNano": "1712577001000000000",
+        "attributes": attributes,
+        "status": {
+            "code": 2,
+            "message": status_message,
+        },
+    }
+
+    if exception_type or exception_message or exception_stacktrace:
+        event_attrs = []
+        if exception_type:
+            event_attrs.append({"key": "exception.type", "value": {"stringValue": exception_type}})
+        if exception_message:
+            event_attrs.append({"key": "exception.message", "value": {"stringValue": exception_message}})
+        if exception_stacktrace:
+            event_attrs.append({"key": "exception.stacktrace", "value": {"stringValue": exception_stacktrace}})
+        span["events"] = [{"name": "exception", "attributes": event_attrs}]
+
     return {
         "resourceSpans": [
             {
@@ -67,30 +104,7 @@ def _otlp_payload(
                         }
                     ]
                 },
-                "scopeSpans": [
-                    {
-                        "spans": [
-                            {
-                                "traceId": trace_id,
-                                "spanId": "span001",
-                                "name": span_name,
-                                "kind": 2,
-                                "startTimeUnixNano": start_time_nano,
-                                "endTimeUnixNano": "1712577001000000000",
-                                "attributes": [
-                                    {
-                                        "key": "http.status_code",
-                                        "value": {"intValue": str(http_status_code)},
-                                    }
-                                ],
-                                "status": {
-                                    "code": 2,
-                                    "message": status_message,
-                                },
-                            }
-                        ]
-                    }
-                ],
+                "scopeSpans": [{"spans": [span]}],
             }
         ]
     }
@@ -175,10 +189,10 @@ class TestOtlpWebhook:
         assert response.status_code == 201
         payload = mock_publisher.publish.call_args[0][2]
         assert payload["title"] == "Connection refused"
-        assert payload["description"] == "Connection refused"
+        assert "Connection refused" in payload["description"]
 
     def test_otlp_fallback_to_span_name(self, client, mock_publisher):
-        """When status.message is empty, fall back to span name."""
+        """When status.message is empty and no exception events, fall back to span name."""
         data = _otlp_payload(status_message="")
         data["resourceSpans"][0]["scopeSpans"][0]["spans"][0]["status"]["message"] = ""
         response = client.post("/api/webhooks/otel", json=data)
@@ -360,6 +374,115 @@ class TestOtlpWebhook:
         assert response.status_code == 201
         payload = mock_publisher.publish.call_args[0][2]
         assert payload["title"] == "GET /api/products"
+
+
+# ==========================================================================
+# OTLP Exception Event Extraction
+# ==========================================================================
+class TestOtlpExceptionExtraction:
+    def test_exception_event_populates_title(self, client, mock_publisher):
+        """When span has exception event, title uses exception type + message."""
+        response = client.post(
+            "/api/webhooks/otel",
+            json=_otlp_payload(
+                status_message="",
+                exception_type="System.NullReferenceException",
+                exception_message="Object reference not set to an instance of an object.",
+            ),
+        )
+        assert response.status_code == 201
+        payload = mock_publisher.publish.call_args[0][2]
+        assert "NullReferenceException" in payload["title"]
+        assert "Object reference not set" in payload["title"]
+
+    def test_exception_stacktrace_in_description(self, client, mock_publisher):
+        """Stack trace from exception event is included in description."""
+        response = client.post(
+            "/api/webhooks/otel",
+            json=_otlp_payload(
+                exception_type="System.NullReferenceException",
+                exception_message="Object reference not set",
+                exception_stacktrace="at CatalogApi.GetItemById(int id)\n   at lambda_method()",
+            ),
+        )
+        assert response.status_code == 201
+        payload = mock_publisher.publish.call_args[0][2]
+        assert "Stack Trace:" in payload["description"]
+        assert "CatalogApi.GetItemById" in payload["description"]
+
+    def test_exception_with_http_context(self, client, mock_publisher):
+        """Description includes HTTP method, URL, and status when available."""
+        response = client.post(
+            "/api/webhooks/otel",
+            json=_otlp_payload(
+                exception_type="System.NullReferenceException",
+                exception_message="Object reference not set",
+                http_method="GET",
+                http_url="/api/catalog/items/13666",
+                http_status_code=500,
+            ),
+        )
+        assert response.status_code == 201
+        payload = mock_publisher.publish.call_args[0][2]
+        desc = payload["description"]
+        assert "NullReferenceException" in desc
+        assert "GET" in desc
+        assert "/api/catalog/items/13666" in desc
+        assert "500" in desc
+
+    def test_exception_title_overrides_status_message(self, client, mock_publisher):
+        """Exception details take priority over generic status.message."""
+        response = client.post(
+            "/api/webhooks/otel",
+            json=_otlp_payload(
+                status_message="Internal Server Error",
+                exception_type="System.InvalidOperationException",
+                exception_message="Sequence contains no elements",
+            ),
+        )
+        assert response.status_code == 201
+        payload = mock_publisher.publish.call_args[0][2]
+        assert "InvalidOperationException" in payload["title"]
+        assert "Sequence contains no elements" in payload["title"]
+
+    def test_error_message_in_trace_data(self, client, mock_publisher):
+        """trace_data.error_message captures the enriched title."""
+        response = client.post(
+            "/api/webhooks/otel",
+            json=_otlp_payload(
+                exception_type="System.TimeoutException",
+                exception_message="Operation timed out",
+            ),
+        )
+        assert response.status_code == 201
+        payload = mock_publisher.publish.call_args[0][2]
+        assert "TimeoutException" in payload["trace_data"]["error_message"]
+
+    def test_no_exception_events_uses_status_message(self, client, mock_publisher):
+        """Without exception events, falls back to status.message as before."""
+        response = client.post(
+            "/api/webhooks/otel",
+            json=_otlp_payload(status_message="Connection refused"),
+        )
+        assert response.status_code == 201
+        payload = mock_publisher.publish.call_args[0][2]
+        assert payload["title"] == "Connection refused"
+
+    def test_stacktrace_truncation(self, client, mock_publisher):
+        """Very long stack traces are truncated in description."""
+        long_trace = "at SomeMethod()\n" * 1000  # ~17k chars
+        response = client.post(
+            "/api/webhooks/otel",
+            json=_otlp_payload(
+                exception_type="System.Exception",
+                exception_message="boom",
+                exception_stacktrace=long_trace,
+            ),
+        )
+        assert response.status_code == 201
+        payload = mock_publisher.publish.call_args[0][2]
+        # Description should contain stack trace but be bounded
+        assert len(payload["description"]) < 5000
 
 
 # ==========================================================================

@@ -173,7 +173,6 @@ class TestFormatTicketBody:
         assert "## 📎 Attachments" in body
         assert "## 🧠 Triage Reasoning" in body
         assert "## 📊 Severity Assessment" in body
-        assert "## 🔎 Confidence" in body
 
     def test_file_refs_rendered(self):
         mod = _load_generate_output()
@@ -271,21 +270,19 @@ class TestFormatTicketBody:
         body = mod._format_ticket_body(state, result)
         assert "Traced execution path" in body
 
-    def test_confidence_and_severity_in_assessment(self):
+    def test_severity_in_assessment(self):
         mod = _load_generate_output()
         state = _make_state()
         result = _make_bug_result()
         body = mod._format_ticket_body(state, result)
-        assert "0.87" in body
         assert "P2" in body
 
-    def test_low_confidence_indicator(self):
+    def test_low_confidence_not_in_ticket_body(self):
         mod = _load_generate_output()
         state = _make_state()
         result = _make_bug_result(confidence=0.45)
         body = mod._format_ticket_body(state, result)
-        assert "🟡" in body
-        assert "Low Confidence" in body
+        assert "🔎 Confidence" not in body
 
     def test_no_low_confidence_when_above_threshold(self):
         mod = _load_generate_output()
@@ -490,7 +487,6 @@ class TestGenerateOutputNodeBugPath:
         assert "📎 Attachments" in body
         assert "🧠 Triage Reasoning" in body
         assert "📊 Severity Assessment" in body
-        assert "🔎 Confidence" in body
 
 
 # ---------------------------------------------------------------------------
@@ -1204,7 +1200,6 @@ class TestBuildNotificationPayload:
         assert payload["reporter_email"] == "reporter99@example.com"
         assert payload["message"] == "This is expected behavior during scheduled cache rebuild."
         assert payload["incident_id"] == state.incident_id
-        assert payload["confidence"] == 0.92
         assert payload["allow_reescalation"] is True
         assert payload["event_id"] == state.event_id
 
@@ -1455,8 +1450,8 @@ class TestNonIncidentDismissalPath:
         assert "less certain" not in payload["message"]
 
     @pytest.mark.asyncio
-    async def test_confidence_included_in_notification(self):
-        """Confidence value must be in notification payload."""
+    async def test_notification_includes_incident_id(self):
+        """Notification payload must include incident_id."""
         publisher = AsyncMock()
         publisher.publish.return_value = "evt-conf-val"
 
@@ -1471,7 +1466,7 @@ class TestNonIncidentDismissalPath:
         calls = publisher.publish.call_args_list
         notif_calls = [c for c in calls if c[0][1] == "notification.send"]
         payload = notif_calls[0][0][2]
-        assert payload["confidence"] == 0.88
+        assert payload["incident_id"] == state.incident_id
 
 
 # ---------------------------------------------------------------------------
@@ -1645,7 +1640,6 @@ class TestFallbackNotification:
         assert payload["type"] == "reporter_update"
         assert "couldn't fully analyze" in payload["message"]
         assert payload["allow_reescalation"] is True
-        assert payload["confidence"] == 0.0
 
     @pytest.mark.asyncio
     async def test_fallback_user_integration_has_generic_message(self):

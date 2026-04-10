@@ -190,16 +190,32 @@ async def _handle_otlp_traces(body: dict) -> dict | JSONResponse:
                     continue
 
                 status = span.get("status") or {}
-                error_message = status.get("message") or span.get("name", "OTEL Error")
+                span_name = span.get("name", "OTEL Error")
+                error_message = status.get("message") or span_name
                 trace_id = span.get("traceId", "")
                 status_code = _safe_int(_extract_span_attr(span, "http.status_code"))
+                http_method = _extract_span_attr(span, "http.method") or _extract_span_attr(span, "http.request.method")
+                http_url = _extract_span_attr(span, "url.full") or _extract_span_attr(span, "http.url") or _extract_span_attr(span, "url.path")
                 timestamp = _nano_to_iso(span.get("startTimeUnixNano"))
+
+                exception = _extract_exception_from_events(span)
+
+                # Build a meaningful title from exception details
+                if exception.get("type") and exception.get("message"):
+                    title = f"{exception['type']}: {exception['message']}"
+                else:
+                    title = error_message
+
+                description = _build_otlp_description(
+                    span_name, error_message, exception,
+                    http_method, http_url, status_code,
+                )
 
                 incident_id = str(uuid.uuid4())
                 payload = {
                     "incident_id": incident_id,
-                    "title": error_message,
-                    "description": error_message,
+                    "title": title,
+                    "description": description,
                     "component": service_name,
                     "severity": None,
                     "attachment_url": None,
@@ -210,6 +226,7 @@ async def _handle_otlp_traces(body: dict) -> dict | JSONResponse:
                         "status_code": status_code,
                         "timestamp": timestamp,
                         "service_name": service_name,
+                        "error_message": title,
                     },
                 }
 
@@ -262,6 +279,61 @@ def _extract_span_attr(span: dict, key: str) -> str | None:
             val = attr.get("value") or {}
             return str(val.get("stringValue") or val.get("intValue", ""))
     return None
+
+
+def _extract_event_attr(event: dict, key: str) -> str | None:
+    """Extract an attribute value from an OTLP span event."""
+    for attr in (event.get("attributes") or []):
+        if not isinstance(attr, dict):
+            continue
+        if attr.get("key") == key:
+            val = attr.get("value") or {}
+            return val.get("stringValue")
+    return None
+
+
+def _extract_exception_from_events(span: dict) -> dict:
+    """Extract exception details from span events (e.g. exception.type, message, stacktrace)."""
+    for event in (span.get("events") or []):
+        if not isinstance(event, dict):
+            continue
+        if event.get("name") == "exception":
+            return {
+                "type": _extract_event_attr(event, "exception.type"),
+                "message": _extract_event_attr(event, "exception.message"),
+                "stacktrace": _extract_event_attr(event, "exception.stacktrace"),
+            }
+    return {}
+
+
+def _build_otlp_description(
+    span_name: str,
+    error_message: str,
+    exception: dict,
+    http_method: str | None,
+    http_url: str | None,
+    status_code: int | None,
+) -> str:
+    """Build a rich description from OTLP span data for the agent to analyze."""
+    parts: list[str] = []
+
+    if exception.get("type") and exception.get("message"):
+        parts.append(f"Exception: {exception['type']}: {exception['message']}")
+    elif error_message and error_message != span_name:
+        parts.append(f"Error: {error_message}")
+
+    if http_method or http_url:
+        endpoint = f"{http_method or ''} {http_url or span_name}".strip()
+        parts.append(f"Endpoint: {endpoint}")
+
+    if status_code:
+        parts.append(f"HTTP Status: {status_code}")
+
+    if exception.get("stacktrace"):
+        stacktrace = exception["stacktrace"][:4000]
+        parts.append(f"Stack Trace:\n{stacktrace}")
+
+    return "\n\n".join(parts) if parts else error_message
 
 
 def _safe_int(value: str | None) -> int | None:

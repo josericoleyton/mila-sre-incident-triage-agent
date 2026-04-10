@@ -183,13 +183,12 @@ class TestBuildReporterUpdateBlocks:
         assert section["type"] == "section"
         assert "transient timeout" in section["text"]["text"]
 
-    def test_context_shows_confidence_and_incident_id(self):
+    def test_context_shows_incident_id(self):
         n = Notification(**_reporter_update_payload())
         blocks = build_reporter_update_blocks(n)
         ctx = blocks[2]
         assert ctx["type"] == "context"
         text = ctx["elements"][0]["text"]
-        assert "0.85" in text
         assert "inc-200" in text
 
     def test_reescalation_button_when_allowed(self):
@@ -220,11 +219,11 @@ class TestBuildReporterUpdateBlocks:
         blocks = build_reporter_update_blocks(n)
         assert "has been analyzed" in blocks[1]["text"]["text"]
 
-    def test_missing_confidence_shows_na(self):
+    def test_missing_confidence_no_crash(self):
         n = Notification(**_reporter_update_payload(confidence=None))
         blocks = build_reporter_update_blocks(n)
         text = blocks[2]["elements"][0]["text"]
-        assert "N/A" in text
+        assert "inc-200" in text
 
 
 # ---------------------------------------------------------------------------
@@ -239,13 +238,13 @@ class TestBuildReporterResolvedBlocks:
         assert header["type"] == "header"
         assert "Incident Resolved" in header["text"]["text"]
 
-    def test_message_contains_title_and_celebration(self):
+    def test_message_contains_title_and_resolution_text(self):
         n = Notification(**_reporter_resolved_payload())
         blocks = build_reporter_resolved_blocks(n)
         section = blocks[1]
         assert "NullReferenceException in OrderController.cs" in section["text"]["text"]
         assert "resolved" in section["text"]["text"]
-        assert "🎉" in section["text"]["text"]
+        assert "You can view the details in the ticket below" in section["text"]["text"]
 
     def test_ticket_link_button_present(self):
         n = Notification(**_reporter_resolved_payload())
@@ -513,6 +512,7 @@ class TestHandleReporterResolved:
             fallback = mock_dm.call_args[0][2]
             assert "NullReferenceException" in fallback
             assert "resolved" in fallback
+            assert "engineering team" in fallback
 
     @pytest.mark.asyncio
     async def test_no_ticket_button_when_no_url(self):

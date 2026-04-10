@@ -1,7 +1,5 @@
 # AGENTS_USE.md
 
-# Agent #1
-
 ## 1. Agent Overview
 
 **Agent Name:** Mila

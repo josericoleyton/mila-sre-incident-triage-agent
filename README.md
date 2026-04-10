@@ -1,4 +1,3 @@
-```markdown
 # Mila — AI SRE Incident Intake & Triage Agent
 
 Every technical team knows the feeling: alerts start firing, services behave unexpectedly, and the people who notice first are not always the ones who can fix it. By the time a real incident reaches the right engineer, critical context has been lost, time has been wasted, and in an e-commerce platform every minute of degraded service is a customer who couldn't check out.

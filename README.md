@@ -8,6 +8,7 @@ Built for the **AgentX Hackathon 2026** by SoftServe. Designed and implemented u
 
 ---
 
+
 ## What Mila Does
 
 Mila monitors the [eShop](https://github.com/dotnet/eShop) e-commerce platform from two directions: reactively, when an Incident Manager submits a report through the web UI, and proactively, when the OpenTelemetry Collector detects error spans in production without any human input.
@@ -21,6 +22,18 @@ Once an incident arrives, Mila runs a four-node AI pipeline that analyzes the re
 - Prompt injection detection and input sanitization before any LLM call
 - Full observability with structured logs, distributed traces, and triage completion events
 - End-to-end notification loop from intake to resolution
+
+
+---
+
+### Demo
+
+<div align="center">
+  <a href="https://www.youtube.com/watch?v=1833RscTaAs">
+    <img src="https://img.youtube.com/vi/1833RscTaAs/maxresdefault.jpg" alt="Mila Demo Video" width="720">
+  </a>
+  <p><em>Click the image above to watch the demo on YouTube</em></p>
+</div>
 
 ---
 

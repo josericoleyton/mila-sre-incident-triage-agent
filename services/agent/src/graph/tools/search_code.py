@@ -16,10 +16,12 @@ _SKIP_EXTS = frozenset({
 async def search_code(ctx: RunContext[TriageDeps], query: str) -> str:
     """Search the configured GitHub repositories for code matching the query.
 
-    Use this to find source files relevant to the incident being triaged.
-    Results include a 'repo' field indicating which repository each match came from.
-    You can refine your search by calling this tool multiple times with different queries,
-    but stay within the limit specified in your instructions.
+    Use PRECISE search terms: class names, method names, exception types, error message fragments.
+    Good: 'NullReferenceException CatalogBrand', 'Task.Delay BasketService', 'AddAndSaveEventAsync'
+    Bad: 'error', 'bug in catalog', 'order issue'
+
+    Results include file paths and code snippets. Use read_file or read_file_section to inspect
+    the full source of promising matches.
     If you get an authentication error, STOP searching — do not retry.
     """
     logger.info("search_code called query_length=%d", len(query))

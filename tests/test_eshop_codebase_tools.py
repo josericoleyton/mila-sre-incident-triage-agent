@@ -393,6 +393,84 @@ class TestReadFileTool:
         result = await read_file(ctx, "some/file.cs")
         assert "timeout" in result.lower()
 
+    @pytest.mark.asyncio
+    async def test_tool_adds_line_numbers(self):
+        mock_client = AsyncMock(spec=CodeRepository)
+        mock_client.get_file_content.return_value = "line one\nline two\nline three"
+        ctx = _mock_run_context(mock_client)
+
+        result = await read_file(ctx, "src/Test.cs")
+        assert "1| line one" in result
+        assert "2| line two" in result
+        assert "3| line three" in result
+        assert "File: src/Test.cs" in result
+
+    @pytest.mark.asyncio
+    async def test_tool_skips_line_numbers_for_errors(self):
+        mock_client = AsyncMock(spec=CodeRepository)
+        mock_client.get_file_content.return_value = "File not found: missing.cs"
+        ctx = _mock_run_context(mock_client)
+
+        result = await read_file(ctx, "missing.cs")
+        assert result == "File not found: missing.cs"
+
+
+# ---------------------------------------------------------------------------
+# read_file_section tool tests
+# ---------------------------------------------------------------------------
+
+class TestReadFileSectionTool:
+    @pytest.mark.asyncio
+    async def test_reads_specific_line_range(self):
+        from src.graph.tools.read_file import read_file_section
+
+        mock_client = AsyncMock(spec=CodeRepository)
+        mock_client.get_file_content.return_value = "a\nb\nc\nd\ne\nf\ng\nh\ni\nj"
+        ctx = _mock_run_context(mock_client)
+
+        result = await read_file_section(ctx, "src/Test.cs", 3, 6)
+        assert "3| c" in result
+        assert "4| d" in result
+        assert "5| e" in result
+        assert "6| f" in result
+        assert "lines 3-6 of 10" in result
+        assert "a" not in result.split("\n")[2]  # 'a' should not be in data lines
+
+    @pytest.mark.asyncio
+    async def test_clamps_to_file_bounds(self):
+        from src.graph.tools.read_file import read_file_section
+
+        mock_client = AsyncMock(spec=CodeRepository)
+        mock_client.get_file_content.return_value = "a\nb\nc"
+        ctx = _mock_run_context(mock_client)
+
+        result = await read_file_section(ctx, "src/Test.cs", 2, 100)
+        assert "2| b" in result
+        assert "3| c" in result
+        assert "lines 2-3 of 3" in result
+
+    @pytest.mark.asyncio
+    async def test_returns_error_for_out_of_range(self):
+        from src.graph.tools.read_file import read_file_section
+
+        mock_client = AsyncMock(spec=CodeRepository)
+        mock_client.get_file_content.return_value = "a\nb\nc"
+        ctx = _mock_run_context(mock_client)
+
+        result = await read_file_section(ctx, "src/Test.cs", 50, 100)
+        assert "only 3 lines" in result
+
+    @pytest.mark.asyncio
+    async def test_propagates_error_messages(self):
+        from src.graph.tools.read_file import read_file_section
+
+        mock_client = AsyncMock(spec=CodeRepository)
+        mock_client.get_file_content.return_value = "File not found: bad.cs"
+        ctx = _mock_run_context(mock_client)
+
+        result = await read_file_section(ctx, "bad.cs", 1, 10)
+        assert "File not found" in result
+
 
 # ---------------------------------------------------------------------------
 # GitHubClient auth header tests

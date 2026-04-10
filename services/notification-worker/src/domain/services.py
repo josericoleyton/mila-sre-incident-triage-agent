@@ -54,10 +54,8 @@ def build_team_alert_blocks(notification: Notification) -> list[dict]:
         "fields": fields,
     })
 
-    # Root Cause: truncated to 300 chars
+    # Root Cause: full summary
     summary = notification.summary or "No summary available"
-    if len(summary) > 300:
-        summary = summary[:300] + "..."
 
     blocks.append({
         "type": "section",

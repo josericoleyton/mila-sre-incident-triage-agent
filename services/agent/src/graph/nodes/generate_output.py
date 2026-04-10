@@ -198,16 +198,16 @@ def _format_ticket_body(state: TriageState, result: TriageResult) -> str:
 def _generate_ticket_title(result: TriageResult, incident: dict) -> str:
     """Generate a descriptive technical title from triage analysis.
 
-    Format: [Component]: [root cause summary up to 80 chars]
+    Format: [Component]: [root cause summary up to 50 chars]
     Truncates at the nearest word boundary to avoid cutting words.
-    Falls back to result.reasoning[:80] when root_cause is absent.
+    Falls back to result.reasoning[:50] when root_cause is absent.
     Component is omitted when not available.
     """
     root_cause = result.root_cause
     if root_cause:
-        summary = _truncate_at_word_boundary(root_cause, 80)
+        summary = _truncate_at_word_boundary(root_cause, 50)
     elif result.reasoning:
-        summary = _truncate_at_word_boundary(result.reasoning, 80)
+        summary = _truncate_at_word_boundary(result.reasoning, 50)
     else:
         summary = "Untitled incident"
     component = incident.get("component", "")

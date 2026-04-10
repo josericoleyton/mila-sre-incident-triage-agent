@@ -301,15 +301,14 @@ class TestBuildTeamAlertBlocks:
         field_texts = [f["text"] for f in blocks[1]["fields"]]
         assert not any("Confidence" in t for t in field_texts)
 
-    def test_root_cause_truncated_at_300_chars(self):
+    def test_root_cause_not_truncated(self):
         long_summary = "x" * 400
         n = Notification(**_team_alert_payload(summary=long_summary))
         blocks = build_team_alert_blocks(n)
         root_cause_text = blocks[2]["text"]["text"]
-        # "*Root Cause:* " prefix + 300 chars + "..."
-        assert root_cause_text.endswith("...")
-        assert "x" * 300 in root_cause_text
-        assert "x" * 301 not in root_cause_text
+        # Full summary included without truncation
+        assert "x" * 400 in root_cause_text
+        assert not root_cause_text.endswith("...")
 
 
 # ---------------------------------------------------------------------------

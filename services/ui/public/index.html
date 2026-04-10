@@ -34,7 +34,8 @@
 .page-sub { font-size: 13px; color: #6B7DB3; line-height: 1.6; }
 
 .mila-bar { display: flex; align-items: flex-start; gap: 12px; background: #fff; border: 0.5px solid #DDE3F5; border-left: 3px solid #3B5BDB; border-radius: 0 12px 12px 0; padding: 14px 18px; margin-bottom: 28px; }
-.mila-avatar { width: 32px; height: 32px; border-radius: 50%; background: #EEF2FF; border: 1.5px solid #3B5BDB; display: flex; align-items: center; justify-content: center; font-size: 13px; color: #3B5BDB; font-weight: 700; font-family: Georgia, serif; flex-shrink: 0; }
+.mila-avatar { width: 52px; height: 52px; border-radius: 50%; background: #EEF2FF; border: 1.5px solid #3B5BDB; display: flex; align-items: center; justify-content: center; font-size: 13px; color: #3B5BDB; font-weight: 700; font-family: Georgia, serif; flex-shrink: 0; overflow: hidden; }
+.mila-avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
 .mila-content { flex: 1; }
 .mila-name { font-size: 11px; font-weight: 700; color: #3B5BDB; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 4px; }
 .mila-msg { font-size: 13px; color: #4A5580; font-family: Georgia, serif; font-style: italic; line-height: 1.6; }
@@ -130,15 +131,14 @@
   <div class="topbar">
     <div class="topbar-inner">
       <div class="logo">
-        <div class="logo-mark"><span>M</span></div>
         <span class="logo-text">Mila</span>
         <span class="logo-sub">/ SRE Triage</span>
       </div>
       <div class="user-pill">
-        <div class="user-avatar">ML</div>
+        <div class="user-avatar">LV</div>
         <div class="user-info">
-          <span class="user-name">Ana Botero</span>
-          <span class="user-role">Support Lead</span>
+          <span class="user-name">Laura Villada</span>
+          <span class="user-role">Incident Manager</span>
         </div>
         <div class="status-dot"></div>
       </div>
@@ -157,14 +157,22 @@
         </div>
 
         <div class="mila-bar">
-          <div class="mila-avatar">M</div>
+          <div class="mila-avatar"><img src="mila-avatar.png" alt="Mila"/></div>
           <div class="mila-content">
             <p class="mila-name">Mila</p>
-            <p class="mila-msg" id="mila-hint">Hi Ana — tell me what you're seeing and I'll take it from there.<span class="mila-cursor"></span></p>
+            <p class="mila-msg" id="mila-hint">Hi Laura — tell me what you're seeing and I'll take it from there.<span class="mila-cursor"></span></p>
           </div>
         </div>
 
         <div class="form-card">
+
+          <div class="form-section">
+            <p class="section-label">Reporter</p>
+            <div class="field">
+              <span class="flabel">Email</span>
+              <input type="email" id="f-email" placeholder="laura.villada@company.com" required oninput="updateProgress()"/>
+            </div>
+          </div>
 
           <div class="form-section">
             <p class="section-label">Incident</p>
@@ -207,14 +215,6 @@
           </div>
 
           <div class="form-section">
-            <p class="section-label">Reporter</p>
-            <div class="field">
-              <span class="flabel">Email</span>
-              <input type="email" id="f-email" placeholder="ana.botero@company.com" required oninput="updateProgress()"/>
-            </div>
-          </div>
-
-          <div class="form-section">
             <p class="section-label">Evidence <span class="optional-tag">optional</span></p>
             <div class="upload-zone" onclick="document.getElementById('fi').click()">
               <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#3B5BDB" stroke-width="1.5" style="margin:0 auto 8px;display:block;opacity:0.3;">
@@ -242,7 +242,7 @@
 
           <div class="form-footer">
             <div class="footer-left">
-              <span class="footer-reporter">Reporting as <strong>Ana Botero</strong></span>
+              <span class="footer-reporter">Reporting as <strong>Laura Villada</strong></span>
               <span class="footer-reporter" style="font-size:10px;">You'll be notified when this is resolved.</span>
             </div>
             <button class="submit-btn" id="submit-btn" onclick="submitForm()">
